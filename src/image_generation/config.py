@@ -59,8 +59,14 @@ class ImageGenerationConfig:
             processed_images = [
                 process_inspiration_image(img) for img in self.inspiration_images
             ]
-            config_dict['image_url'] = processed_images[0]
-            if len(processed_images) > 1:
-                config_dict['reference_images'] = processed_images[1:]
+
+            # Different models use different parameter names for images
+            # edit-image models use 'image_urls', text-to-image use 'image_url'
+            if 'edit-image' in self.model_name:
+                config_dict['image_urls'] = processed_images
+            else:
+                config_dict['image_url'] = processed_images[0]
+                if len(processed_images) > 1:
+                    config_dict['reference_images'] = processed_images[1:]
 
         return config_dict
