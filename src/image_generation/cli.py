@@ -60,7 +60,7 @@ Examples:
     parser.add_argument(
         '--model', '-m',
         type=str,
-        default='fal-ai/flux/dev',
+        default='fal-ai/alpha-image-232/text-to-image',
         help='Model name to use (default: fal-ai/flux/dev)'
     )
 
