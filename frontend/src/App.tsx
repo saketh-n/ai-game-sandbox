@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import AssetPromptsDisplay from './components/AssetPromptsDisplay'
 
 const API_URL = 'http://localhost:8000'
@@ -10,6 +10,12 @@ interface AssetData {
   backgrounds?: any
 }
 
+interface CachedPrompt {
+  prompt: string
+  timestamp: string
+  preview: string
+}
+
 function App() {
   const [prompt, setPrompt] = useState('')
   const [submittedPrompt, setSubmittedPrompt] = useState('')
@@ -17,6 +23,74 @@ function App() {
   const [parsedData, setParsedData] = useState<AssetData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [cachedPrompts, setCachedPrompts] = useState<CachedPrompt[]>([])
+  const [showCachedPrompts, setShowCachedPrompts] = useState(false)
+  const [isCached, setIsCached] = useState(false)
+
+  // Fetch cached prompts on component mount
+  useEffect(() => {
+    fetchCachedPrompts()
+  }, [])
+
+  const fetchCachedPrompts = async () => {
+    try {
+      const response = await fetch(`${API_URL}/cached-prompts`)
+      if (response.ok) {
+        const data = await response.json()
+        setCachedPrompts(data.prompts)
+        setShowCachedPrompts(data.count > 0)
+      }
+    } catch (err) {
+      console.error('Failed to fetch cached prompts:', err)
+    }
+  }
+
+  const loadCachedPrompt = async (cachedPrompt: string) => {
+    setIsLoading(true)
+    setError('')
+    setGeneratedResponse('')
+    setParsedData(null)
+    setShowCachedPrompts(false)
+
+    try {
+      const response = await fetch(`${API_URL}/fetch-cached-prompt`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt: cachedPrompt }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setSubmittedPrompt(data.prompt)
+      setPrompt(data.prompt)
+      const resultText = data.result
+      setGeneratedResponse(resultText)
+      setIsCached(true)
+
+      // Parse the JSON
+      try {
+        let cleanedJson = resultText.trim()
+        if (cleanedJson.startsWith('```json')) {
+          cleanedJson = cleanedJson.replace(/^```json\s*/, '').replace(/\s*```$/, '')
+        } else if (cleanedJson.startsWith('```')) {
+          cleanedJson = cleanedJson.replace(/^```\s*/, '').replace(/\s*```$/, '')
+        }
+        const parsed = JSON.parse(cleanedJson)
+        setParsedData(parsed)
+      } catch (parseErr) {
+        console.error('Failed to parse JSON response:', parseErr)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load cached prompt')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const generateAssetPrompts = async (userPrompt: string) => {
     setIsLoading(true)
@@ -24,6 +98,8 @@ function App() {
     setSubmittedPrompt(userPrompt)
     setGeneratedResponse('')
     setParsedData(null)
+    setIsCached(false)
+    setShowCachedPrompts(false)
 
     try {
       const response = await fetch(`${API_URL}/generate-asset-prompts`, {
@@ -40,7 +116,11 @@ function App() {
 
       const data = await response.json()
       const resultText = data.result
+      setIsCached(data.cached || false)
       setGeneratedResponse(resultText)
+
+      // Refresh cached prompts list
+      fetchCachedPrompts()
 
       // Try to parse the JSON response
       try {
@@ -92,6 +172,62 @@ function App() {
             </p>
           </div>
 
+          {/* Cached Prompts Section */}
+          {showCachedPrompts && cachedPrompts.length > 0 && !generatedResponse && (
+            <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-6 mb-8 border border-white/20">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-white flex items-center space-x-2">
+                  <svg className="w-5 h-5 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Recent Prompts ({cachedPrompts.length})</span>
+                </h3>
+                <button
+                  onClick={() => setShowCachedPrompts(false)}
+                  className="text-purple-300 hover:text-purple-200 text-sm transition-colors"
+                >
+                  Hide
+                </button>
+              </div>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {cachedPrompts.map((cached, index) => (
+                  <button
+                    key={index}
+                    onClick={() => loadCachedPrompt(cached.prompt)}
+                    className="w-full text-left px-4 py-3 bg-purple-500/10 hover:bg-purple-500/20 rounded-lg transition-colors border border-purple-500/20 hover:border-purple-500/40 group"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 mr-3">
+                        <p className="text-purple-100 text-sm font-medium group-hover:text-white transition-colors">
+                          {cached.preview}
+                        </p>
+                        <p className="text-purple-400 text-xs mt-1">
+                          {new Date(cached.timestamp).toLocaleString()}
+                        </p>
+                      </div>
+                      <svg className="w-5 h-5 text-purple-400 group-hover:text-purple-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Show cached prompts button */}
+          {!showCachedPrompts && cachedPrompts.length > 0 && !generatedResponse && (
+            <button
+              onClick={() => setShowCachedPrompts(true)}
+              className="mb-8 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 rounded-lg transition-colors text-sm flex items-center space-x-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Show {cachedPrompts.length} cached prompt{cachedPrompts.length !== 1 ? 's' : ''}</span>
+            </button>
+          )}
+
           {/* Input Section */}
           <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-8 mb-8 border border-white/20">
             <form onSubmit={handleSubmit}>
@@ -109,6 +245,14 @@ function App() {
                 </div>
               </div>
             </form>
+            {isCached && (
+              <div className="mt-3 flex items-center space-x-2 text-green-400 text-sm">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span>Loaded from cache (instant!)</span>
+              </div>
+            )}
           </div>
 
           {/* Loading Section */}

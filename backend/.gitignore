@@ -32,6 +32,9 @@ ENV/
 logs/
 *.log
 
+# Cache
+prompt_cache.json
+
 # IDE
 .vscode/
 .idea/

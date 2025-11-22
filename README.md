@@ -78,23 +78,23 @@ Once the backend is running, visit:
 - **Swagger UI**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
 
-### Main Endpoint
+### Main Endpoints
 
 **POST** `/generate-asset-prompts`
+- Generates asset prompts (uses cache if available)
+- Request: `{ "prompt": "game theme" }`
+- Response: `{ "result": "...", "cached": false }`
 
-Request:
-```json
-{
-  "prompt": "cyberpunk noir detective game"
-}
-```
+**GET** `/cached-prompts`
+- Returns list of all cached prompts
+- Response: `{ "prompts": [...], "count": 5 }`
 
-Response:
-```json
-{
-  "result": "Detailed prompts for game assets..."
-}
-```
+**POST** `/fetch-cached-prompt`
+- Fetches full result for a cached prompt
+- Request: `{ "prompt": "exact prompt text" }`
+- Response: `{ "prompt": "...", "result": "...", "timestamp": "..." }`
+
+See `CACHING_FEATURE.md` for detailed caching documentation.
 
 ## 🎨 Features
 
@@ -108,6 +108,9 @@ Response:
 - ✏️ **Editable Prompts**: Modify any generated prompt in real-time
 - 📄 **One-Click Copy**: Copy button for each prompt variation
 - 🎯 **Comprehensive Assets**: Characters, environments, NPCs, and backgrounds all generated at once
+- 💾 **Smart Caching**: Instant results for previously generated prompts (saves time & API costs)
+- 🕒 **Prompt History**: View and reload recent prompts with one click
+- ⚡ **Instant Loading**: Cached prompts load in <1 second vs 5-15 seconds for new generation
 
 ## 🛠️ Tech Stack
 

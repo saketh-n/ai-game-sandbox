@@ -6,6 +6,8 @@ from loguru import logger
 import os
 from dotenv import load_dotenv
 import traceback
+from typing import List
+from cache_manager import cache
 
 # Load environment variables
 load_dotenv()
@@ -49,6 +51,24 @@ class PromptRequest(BaseModel):
 
 class PromptResponse(BaseModel):
     result: str
+    cached: bool = False
+
+class CachedPromptItem(BaseModel):
+    prompt: str
+    timestamp: str
+    preview: str
+
+class CachedPromptsResponse(BaseModel):
+    prompts: List[CachedPromptItem]
+    count: int
+
+class FetchCachedRequest(BaseModel):
+    prompt: str
+
+class CachedResultResponse(BaseModel):
+    prompt: str
+    result: str
+    timestamp: str
 
 
 @app.get("/")
@@ -60,10 +80,18 @@ async def root():
 async def generate_asset_prompts(request: PromptRequest):
     """
     Generate detailed image generation prompts for game assets (characters, environments, NPCs, backgrounds)
-    using Claude 4.5 Sonnet.
+    using Claude 4.5 Sonnet. Results are cached to save time on repeated requests.
     """
     request_id = f"req_{os.urandom(4).hex()}"  # Simple request tracing
     logger.info(f"[{request_id}] Received request: {request.prompt[:100]}...")
+
+    # Check cache first
+    cached_result = cache.get(request.prompt)
+    if cached_result:
+        logger.info(f"[{request_id}] Cache hit! Returning cached result")
+        return PromptResponse(result=cached_result, cached=True)
+
+    logger.info(f"[{request_id}] Cache miss. Calling Claude API...")
 
     try:
         claude_prompt = f"""You are a professional game artist assistant. Based on the following video game description, generate image generation prompts for all required assets.
@@ -152,7 +180,11 @@ async def generate_asset_prompts(request: PromptRequest):
 
         logger.success(f"[{request_id}] Successfully generated asset prompts ({len(response_text)} chars)")
 
-        return PromptResponse(result=response_text)
+        # Cache the result
+        cache.set(request.prompt, response_text)
+        logger.info(f"[{request_id}] Result cached for future requests")
+
+        return PromptResponse(result=response_text, cached=False)
 
     # === Specific Anthropic Errors ===
     except AuthenticationError as e:
@@ -204,6 +236,95 @@ async def generate_asset_prompts(request: PromptRequest):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred. Check server logs for details."
+        ) from e
+
+
+@app.get("/cached-prompts", response_model=CachedPromptsResponse, status_code=status.HTTP_200_OK)
+async def get_cached_prompts():
+    """
+    Get list of all cached prompts with metadata (timestamp, preview).
+    This endpoint is called on frontend load to show previously generated prompts.
+    """
+    try:
+        prompts = cache.get_all_prompts()
+        logger.info(f"Retrieved {len(prompts)} cached prompts")
+        return CachedPromptsResponse(prompts=prompts, count=len(prompts))
+    except Exception as e:
+        logger.error(f"Error retrieving cached prompts: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve cached prompts"
+        ) from e
+
+
+@app.post("/fetch-cached-prompt", response_model=CachedResultResponse, status_code=status.HTTP_200_OK)
+async def fetch_cached_prompt(request: FetchCachedRequest):
+    """
+    Fetch the full generated result for a specific cached prompt.
+    Returns the complete asset generation data for the given prompt.
+    """
+    try:
+        cached_data = cache.get_cached_result(request.prompt)
+        
+        if not cached_data:
+            logger.warning(f"Cached prompt not found: {request.prompt[:100]}...")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Cached prompt not found"
+            )
+        
+        logger.info(f"Retrieved cached result for prompt: {request.prompt[:100]}...")
+        return CachedResultResponse(**cached_data)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching cached prompt: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch cached prompt"
+        ) from e
+
+
+@app.delete("/cache/{prompt}")
+async def delete_cached_prompt(prompt: str):
+    """
+    Delete a specific cached prompt.
+    """
+    try:
+        success = cache.delete(prompt)
+        if success:
+            logger.info(f"Deleted cached prompt: {prompt[:100]}...")
+            return {"message": "Cached prompt deleted successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Cached prompt not found"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting cached prompt: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete cached prompt"
+        ) from e
+
+
+@app.delete("/cache")
+async def clear_cache():
+    """
+    Clear all cached prompts.
+    """
+    try:
+        cache.clear()
+        logger.info("Cache cleared successfully")
+        return {"message": "Cache cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing cache: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear cache"
         ) from e
 
 
