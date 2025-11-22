@@ -66,20 +66,68 @@ async def generate_asset_prompts(request: PromptRequest):
     logger.info(f"[{request_id}] Received request: {request.prompt[:100]}...")
 
     try:
-        claude_prompt = f"""Based on the following video game description, generate high-quality, detailed prompts suitable for image generation models (DALL-E, Midjourney, Stable Diffusion, Flux, etc.).
+        claude_prompt = f"""You are a professional game artist assistant. Based on the following video game description, generate image generation prompts for all required assets.
 
-Game Description:
-\"{request.prompt}\"
+        Game Description:
+        \"{request.prompt}\"
 
-Please generate prompts for:
-1. Main character (hero/protagonist) - multiple variations if applicable
-2. Environment assets - first list out what key environmental elements are needed, then provide detailed prompts for each
-3. NPCs (non-player characters) - allies, enemies, merchants, etc.
-4. Backgrounds / scenes - key locations, menus, loading screens
+        Return your response as a valid JSON object (no markdown, no ```json blocks, no extra text) with this exact structure:
 
-Make all prompts highly descriptive, include art style suggestions, lighting, mood, composition tips, and specific details that help generate consistent and professional-looking game assets.
+        {{
+        "main_character": {{
+            "description": "Brief overall description of the protagonist",
+            "variations": [
+            "Detailed prompt for variation 1 -- highly descriptive, include art style, lighting, pose, colors, mood, camera angle, etc.",
+            "Detailed prompt for variation 2...",
+            "..."
+            ]
+        }},
+        "environment_assets": {{
+            "key_elements_needed": ["ground tiles", "trees", "rocks", "props", "..."],
+            "assets": {{
+            "ground_tiles": {{
+                "variations": ["prompt 1", "prompt 2", "..."]
+            }},
+            "trees": {{
+                "variations": ["prompt 1", "prompt 2", "..."]
+            }},
+            "rocks": {{
+                "variations": ["prompt 1", "..."]
+            }}
+            // add more assets as needed
+            }}
+        }},
+        "npcs": {{
+            "categories": {{
+            "allies": {{
+                "variations": ["friendly knight prompt...", "healer prompt...", "..."]
+            }},
+            "enemies": {{
+                "variations": ["goblin warrior...", "dark sorcerer...", "..."]
+            }},
+            "neutral": {{
+                "variations": ["merchant prompt...", "villager prompt...", "..."]
+            }}
+            }}
+        }},
+        "backgrounds": {{
+            "scenes": [
+            "Full scene prompt for main hub / level 1 background -- parallax-ready, atmospheric, detailed",
+            "Menu background prompt -- cinematic, moody",
+            "Boss arena background prompt...",
+            "..."
+            ]
+        }}
+        }}
 
-Format your response clearly with headings."""
+        Rules:
+        - Output ONLY the raw JSON. No explanations, no markdown, no trailing text.
+        - Every prompt must be highly detailed and optimized for Stable Diffusion / Flux / Midjourney.
+        - Include art style, lighting, composition, color palette, mood, and camera perspective.
+        - Use double quotes for all JSON keys and strings.
+        - Do not escape newlines inside strings — keep prompts readable.
+        - If a section has only one variation, still put it in a list with one item.
+        - Be creative and consistent with the game theme."""
 
         logger.info(f"[{request_id}] Calling Claude 4.5 Sonnet...")
 

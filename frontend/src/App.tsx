@@ -1,11 +1,20 @@
 import { useState } from 'react'
+import AssetPromptsDisplay from './components/AssetPromptsDisplay'
 
 const API_URL = 'http://localhost:8000'
+
+interface AssetData {
+  main_character?: any
+  environment_assets?: any
+  npcs?: any
+  backgrounds?: any
+}
 
 function App() {
   const [prompt, setPrompt] = useState('')
   const [submittedPrompt, setSubmittedPrompt] = useState('')
   const [generatedResponse, setGeneratedResponse] = useState('')
+  const [parsedData, setParsedData] = useState<AssetData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -14,6 +23,7 @@ function App() {
     setError('')
     setSubmittedPrompt(userPrompt)
     setGeneratedResponse('')
+    setParsedData(null)
 
     try {
       const response = await fetch(`${API_URL}/generate-asset-prompts`, {
@@ -29,7 +39,25 @@ function App() {
       }
 
       const data = await response.json()
-      setGeneratedResponse(data.result)
+      const resultText = data.result
+      setGeneratedResponse(resultText)
+
+      // Try to parse the JSON response
+      try {
+        // Remove markdown code blocks if present
+        let cleanedJson = resultText.trim()
+        if (cleanedJson.startsWith('```json')) {
+          cleanedJson = cleanedJson.replace(/^```json\s*/, '').replace(/\s*```$/, '')
+        } else if (cleanedJson.startsWith('```')) {
+          cleanedJson = cleanedJson.replace(/^```\s*/, '').replace(/\s*```$/, '')
+        }
+        
+        const parsed = JSON.parse(cleanedJson)
+        setParsedData(parsed)
+      } catch (parseErr) {
+        console.error('Failed to parse JSON response:', parseErr)
+        // Keep the raw text in generatedResponse for display
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate prompts')
     } finally {
@@ -131,36 +159,42 @@ function App() {
 
           {/* Output Section */}
           {generatedResponse && !isLoading && (
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-8 border border-white/20 animate-fade-in">
-              <div className="flex items-start space-x-3">
-                <div className="flex-shrink-0">
-                  <svg
-                    className="w-6 h-6 text-green-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-white mb-2">
-                    Generated Asset Prompts
-                  </h3>
-                  <div className="text-sm text-purple-300 mb-4">
-                    Theme: "{submittedPrompt}"
+            <>
+              {parsedData ? (
+                <AssetPromptsDisplay data={parsedData} originalTheme={submittedPrompt} />
+              ) : (
+                <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-8 border border-white/20 animate-fade-in">
+                  <div className="flex items-start space-x-3">
+                    <div className="flex-shrink-0">
+                      <svg
+                        className="w-6 h-6 text-yellow-400"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                        />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-yellow-300 mb-2">
+                        Raw Response (JSON Parse Failed)
+                      </h3>
+                      <div className="text-sm text-purple-300 mb-4">
+                        Theme: "{submittedPrompt}"
+                      </div>
+                      <div className="text-purple-100 text-base leading-relaxed whitespace-pre-wrap font-mono text-sm">
+                        {generatedResponse}
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-purple-100 text-base leading-relaxed whitespace-pre-wrap">
-                    {generatedResponse}
-                  </div>
                 </div>
-              </div>
-            </div>
+              )}
+            </>
           )}
         </div>
       </div>
