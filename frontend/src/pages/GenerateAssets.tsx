@@ -1,20 +1,93 @@
 import { useNavigate } from 'react-router-dom'
 import { useAssetContext } from '../context/AssetContext'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+
+const API_URL = 'http://localhost:8000'
+
+interface AssetGeneration {
+  prompt: string
+  category: string
+  groupKey: string
+  status: 'pending' | 'generating' | 'completed' | 'error'
+  imageUrl?: string
+  error?: string
+}
 
 const GenerateAssets = () => {
   const navigate = useNavigate()
   const { selectedPrompts } = useAssetContext()
+  const [assets, setAssets] = useState<AssetGeneration[]>([])
 
   useEffect(() => {
     if (selectedPrompts.length === 0) {
       navigate('/')
+      return
     }
+
+    // Initialize assets with pending status
+    const initialAssets = selectedPrompts.map(sp => ({
+      prompt: sp.prompt,
+      category: sp.category,
+      groupKey: sp.groupKey,
+      status: 'pending' as const,
+    }))
+    setAssets(initialAssets)
+
+    // Start generating images
+    generateAllImages(initialAssets)
   }, [selectedPrompts, navigate])
+
+  const generateAllImages = async (initialAssets: AssetGeneration[]) => {
+    // Start all generations in parallel
+    const generationPromises = initialAssets.map(async (asset, index) => {
+      // Update status to generating
+      setAssets(prev => prev.map((a, idx) => 
+        idx === index ? { ...a, status: 'generating' } : a
+      ))
+
+      try {
+        const response = await fetch(`${API_URL}/generate-image-asset`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: asset.prompt,
+            category: asset.category,
+          }),
+        })
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`)
+        }
+
+        const data = await response.json()
+        
+        // Update status to completed with image URL
+        setAssets(prev => prev.map((a, idx) => 
+          idx === index ? { ...a, status: 'completed', imageUrl: data.image_url } : a
+        ))
+      } catch (error) {
+        // Update status to error
+        setAssets(prev => prev.map((a, idx) => 
+          idx === index ? { 
+            ...a, 
+            status: 'error', 
+            error: error instanceof Error ? error.message : 'Failed to generate'
+          } : a
+        ))
+      }
+    })
+
+    // Wait for all generations to complete
+    await Promise.all(generationPromises)
+  }
 
   const handleBack = () => {
     navigate('/')
   }
+
+  const completedCount = assets.filter(a => a.status === 'completed').length
+  const generatingCount = assets.filter(a => a.status === 'generating').length
+  const errorCount = assets.filter(a => a.status === 'error').length
 
   if (selectedPrompts.length === 0) {
     return null
@@ -58,50 +131,101 @@ const GenerateAssets = () => {
             <div className="mb-6 p-4 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
               <div className="flex items-center space-x-3">
                 <div className="flex-shrink-0">
-                  <div className="relative w-10 h-10">
-                    <div className="absolute inset-0 border-4 border-purple-400/30 rounded-full"></div>
-                    <div className="absolute inset-0 border-4 border-transparent border-t-purple-400 rounded-full animate-spin"></div>
-                  </div>
+                  {completedCount === assets.length ? (
+                    <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  ) : (
+                    <div className="relative w-10 h-10">
+                      <div className="absolute inset-0 border-4 border-purple-400/30 rounded-full"></div>
+                      <div className="absolute inset-0 border-4 border-transparent border-t-purple-400 rounded-full animate-spin"></div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1">
                   <p className="text-white font-medium">
-                    Generating {selectedPrompts.length} assets...
+                    {completedCount === assets.length 
+                      ? 'All assets generated!' 
+                      : `Generating ${assets.length} assets...`}
                   </p>
-                  <p className="text-purple-300 text-sm">This may take a few moments</p>
+                  <p className="text-purple-300 text-sm">
+                    {completedCount} completed · {generatingCount} generating · {errorCount} errors
+                  </p>
                 </div>
               </div>
             </div>
 
             {/* Asset List */}
             <div className="space-y-4">
-              {selectedPrompts.map((item, index) => (
+              {assets.map((asset, index) => (
                 <div key={index} className="p-4 bg-white/5 rounded-xl border border-purple-400/30">
                   <div className="flex items-start space-x-4">
-                    {/* Loading Spinner */}
+                    {/* Status Indicator */}
                     <div className="flex-shrink-0 mt-1">
-                      <div className="relative w-8 h-8">
-                        <div className="absolute inset-0 border-3 border-purple-400/30 rounded-full"></div>
-                        <div className="absolute inset-0 border-3 border-transparent border-t-purple-400 rounded-full animate-spin"></div>
-                      </div>
+                      {asset.status === 'generating' && (
+                        <div className="relative w-8 h-8">
+                          <div className="absolute inset-0 border-3 border-purple-400/30 rounded-full"></div>
+                          <div className="absolute inset-0 border-3 border-transparent border-t-purple-400 rounded-full animate-spin"></div>
+                        </div>
+                      )}
+                      {asset.status === 'completed' && (
+                        <svg className="w-8 h-8 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      )}
+                      {asset.status === 'error' && (
+                        <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      )}
+                      {asset.status === 'pending' && (
+                        <div className="w-8 h-8 rounded-full bg-gray-500/20 flex items-center justify-center">
+                          <div className="w-3 h-3 rounded-full bg-gray-400"></div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center space-x-2 mb-2">
                         <span className="px-3 py-1 bg-purple-500/20 text-purple-200 text-xs font-medium rounded-full">
-                          {item.category}
+                          {asset.category}
                         </span>
-                        <span className="text-yellow-400 text-xs font-medium">Generating...</span>
+                        {asset.status === 'generating' && (
+                          <span className="text-yellow-400 text-xs font-medium">Generating...</span>
+                        )}
+                        {asset.status === 'completed' && (
+                          <span className="text-green-400 text-xs font-medium">Completed</span>
+                        )}
+                        {asset.status === 'error' && (
+                          <span className="text-red-400 text-xs font-medium">Failed</span>
+                        )}
+                        {asset.status === 'pending' && (
+                          <span className="text-gray-400 text-xs font-medium">Pending...</span>
+                        )}
                       </div>
-                      <div className="text-purple-100 text-sm leading-relaxed line-clamp-3 font-mono">
-                        {item.prompt}
-                      </div>
-                    </div>
 
-                    {/* Status Icon */}
-                    <div className="flex-shrink-0">
-                      <div className="w-6 h-6 rounded-full bg-yellow-500/20 flex items-center justify-center">
-                        <div className="w-2 h-2 rounded-full bg-yellow-400"></div>
+                      {/* Image Display */}
+                      {asset.status === 'completed' && asset.imageUrl && (
+                        <div className="mb-3">
+                          <img 
+                            src={asset.imageUrl} 
+                            alt={asset.category}
+                            className="w-full max-w-md rounded-lg border-2 border-purple-500/30"
+                          />
+                        </div>
+                      )}
+
+                      {/* Error Message */}
+                      {asset.status === 'error' && asset.error && (
+                        <div className="mb-2 p-2 bg-red-500/10 rounded border border-red-500/30">
+                          <p className="text-red-300 text-xs">{asset.error}</p>
+                        </div>
+                      )}
+
+                      {/* Prompt Text */}
+                      <div className="text-purple-100 text-sm leading-relaxed line-clamp-2 font-mono">
+                        {asset.prompt}
                       </div>
                     </div>
                   </div>

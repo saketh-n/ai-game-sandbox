@@ -7,6 +7,7 @@ import os
 from dotenv import load_dotenv
 import traceback
 from typing import List
+import asyncio
 from cache_manager import cache
 
 # Load environment variables
@@ -69,6 +70,15 @@ class CachedResultResponse(BaseModel):
     prompt: str
     result: str
     timestamp: str
+
+class GenerateImageRequest(BaseModel):
+    prompt: str = Field(..., description="Image generation prompt")
+    category: str = Field(..., description="Asset category")
+
+class GenerateImageResponse(BaseModel):
+    image_url: str
+    prompt: str
+    category: str
 
 
 @app.get("/")
@@ -325,6 +335,38 @@ async def clear_cache():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to clear cache"
+        ) from e
+
+
+@app.post("/generate-image-asset", response_model=GenerateImageResponse, status_code=status.HTTP_200_OK)
+async def generate_image_asset(request: GenerateImageRequest):
+    """
+    Generate an image asset from a prompt. 
+    Currently a dummy implementation with 30-second timeout that returns a placeholder image.
+    """
+    request_id = f"img_{os.urandom(4).hex()}"
+    logger.info(f"[{request_id}] Image generation request for category: {request.category}")
+    logger.info(f"[{request_id}] Prompt: {request.prompt[:100]}...")
+    
+    try:
+        # Return a placeholder image URL (using picsum.photos for demo)
+        # Different seed based on category for variety
+        category_seed = abs(hash(request.category)) % 1000
+        image_url = f"https://picsum.photos/seed/{category_seed}/512/512"
+        
+        logger.info(f"[{request_id}] Image generated successfully: {image_url}")
+        
+        return GenerateImageResponse(
+            image_url=image_url,
+            prompt=request.prompt,
+            category=request.category
+        )
+    
+    except Exception as e:
+        logger.error(f"[{request_id}] Error generating image: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate image: {str(e)}"
         ) from e
 
 
