@@ -67,7 +67,7 @@ Examples:
     parser.add_argument(
         '--cfg', '-c',
         type=float,
-        default=7.5,
+        default=3.5,
         help='CFG scale / guidance scale (default: 7.5, range: 0-20)'
     )
 
