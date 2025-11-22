@@ -237,11 +237,23 @@ def main():
         # Generate images
         def progress_callback(update):
             if not args.quiet:
-                status = update.get('status')
+                # Handle both dict and object types from fal_client
+                if isinstance(update, dict):
+                    status = update.get('status')
+                else:
+                    status = getattr(update, 'status', None)
+
                 if status == 'IN_PROGRESS':
-                    logs = update.get('logs', [])
+                    if isinstance(update, dict):
+                        logs = update.get('logs', [])
+                    else:
+                        logs = getattr(update, 'logs', [])
+
                     for log in logs:
-                        message = log.get('message', '')
+                        if isinstance(log, dict):
+                            message = log.get('message', '')
+                        else:
+                            message = getattr(log, 'message', '')
                         if message:
                             print(f"  {message}")
                 elif status == 'IN_QUEUE':

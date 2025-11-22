@@ -46,11 +46,23 @@ class ImageGenerator:
             # Poll for results with status updates
             result = handler.get()
 
+            # Handle both dict and object result types
+            if isinstance(result, dict):
+                images = result.get('images', [])
+                timings = result.get('timings', {})
+                seed = result.get('seed')
+                has_nsfw = result.get('has_nsfw_concepts', [])
+            else:
+                images = getattr(result, 'images', [])
+                timings = getattr(result, 'timings', {})
+                seed = getattr(result, 'seed', None)
+                has_nsfw = getattr(result, 'has_nsfw_concepts', [])
+
             return {
-                'images': result.get('images', []),
-                'timings': result.get('timings', {}),
-                'seed': result.get('seed'),
-                'has_nsfw_concepts': result.get('has_nsfw_concepts', []),
+                'images': images,
+                'timings': timings,
+                'seed': seed,
+                'has_nsfw_concepts': has_nsfw,
                 'prompt': config.prompt,
                 'model': config.model_name
             }
@@ -74,10 +86,26 @@ class ImageGenerator:
             Dictionary containing generated images and metadata
         """
         def default_callback(update):
-            if update.get('status') == 'IN_PROGRESS':
-                logs = update.get('logs', [])
+            # Handle both dict and object types from fal_client
+            if isinstance(update, dict):
+                status = update.get('status')
+            else:
+                status = getattr(update, 'status', None)
+
+            if status == 'IN_PROGRESS':
+                if isinstance(update, dict):
+                    logs = update.get('logs', [])
+                else:
+                    logs = getattr(update, 'logs', [])
+
                 if logs:
-                    print(f"Progress: {logs[-1].get('message', '')}")
+                    last_log = logs[-1] if isinstance(logs, list) else logs
+                    if isinstance(last_log, dict):
+                        message = last_log.get('message', '')
+                    else:
+                        message = getattr(last_log, 'message', '')
+                    if message:
+                        print(f"Progress: {message}")
 
         callback = on_queue_update or default_callback
 
@@ -89,11 +117,23 @@ class ImageGenerator:
                 on_queue_update=callback
             )
 
+            # Handle both dict and object result types
+            if isinstance(result, dict):
+                images = result.get('images', [])
+                timings = result.get('timings', {})
+                seed = result.get('seed')
+                has_nsfw = result.get('has_nsfw_concepts', [])
+            else:
+                images = getattr(result, 'images', [])
+                timings = getattr(result, 'timings', {})
+                seed = getattr(result, 'seed', None)
+                has_nsfw = getattr(result, 'has_nsfw_concepts', [])
+
             return {
-                'images': result.get('images', []),
-                'timings': result.get('timings', {}),
-                'seed': result.get('seed'),
-                'has_nsfw_concepts': result.get('has_nsfw_concepts', []),
+                'images': images,
+                'timings': timings,
+                'seed': seed,
+                'has_nsfw_concepts': has_nsfw,
                 'prompt': config.prompt,
                 'model': config.model_name
             }
