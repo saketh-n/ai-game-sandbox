@@ -6,14 +6,18 @@ A full-stack application for generating video game assets using AI. Built with R
 
 ```
 ai-asset-gen-sandbox/
-├── frontend/          # React + TypeScript + Tailwind CSS
+├── frontend/
 │   ├── src/
-│   ├── package.json
-│   └── ...
-├── backend/           # Python FastAPI server
-│   ├── main.py
-│   ├── requirements.txt
-│   └── ...
+│   │   ├── components/      # Reusable UI components
+│   │   ├── pages/          # Route pages (Home, GenerateAssets)
+│   │   ├── context/        # React Context for state management
+│   │   ├── App.tsx         # Router setup
+│   │   └── main.tsx        # Entry point
+│   └── package.json
+├── backend/
+│   ├── main.py             # FastAPI server
+│   ├── cache_manager.py    # Caching system
+│   └── requirements.txt
 └── README.md
 ```
 

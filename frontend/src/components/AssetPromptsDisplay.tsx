@@ -1,42 +1,13 @@
 import { useState } from 'react'
-
-interface Variation {
-  description?: string
-  variations: string[]
-}
-
-interface EnvironmentAssets {
-  key_elements_needed: string[]
-  assets: {
-    [key: string]: {
-      variations: string[]
-    }
-  }
-}
-
-interface NPCs {
-  categories: {
-    [key: string]: {
-      variations: string[]
-    }
-  }
-}
-
-interface AssetData {
-  main_character?: Variation
-  environment_assets?: EnvironmentAssets
-  npcs?: NPCs
-  backgrounds?: {
-    scenes: string[]
-  }
-}
+import { AssetData, SelectedPrompt } from '../context/AssetContext'
 
 interface AssetPromptsDisplayProps {
   data: AssetData
   originalTheme: string
+  onGenerateAssets: (selectedPrompts: SelectedPrompt[]) => void
 }
 
-const AssetPromptsDisplay: React.FC<AssetPromptsDisplayProps> = ({ data, originalTheme }) => {
+const AssetPromptsDisplay: React.FC<AssetPromptsDisplayProps> = ({ data, originalTheme, onGenerateAssets }) => {
   const [openSections, setOpenSections] = useState<{ [key: string]: boolean }>({})
   const [editablePrompts, setEditablePrompts] = useState<{ [key: string]: string }>({})
   
@@ -102,11 +73,70 @@ const AssetPromptsDisplay: React.FC<AssetPromptsDisplayProps> = ({ data, origina
     return selectedVariants[groupKey] === variantKey
   }
 
-  const handleGenerateAssets = () => {
-    console.log('Generate Assets clicked!')
-    console.log('Selected variants:', selectedVariants)
+  const formatCategoryName = (groupKey: string): string => {
+    if (groupKey === 'main-character') return 'Main Character'
+    if (groupKey === 'backgrounds') return 'Background'
+    if (groupKey.startsWith('env-')) {
+      const assetName = groupKey.replace('env-', '')
+      return assetName.split('_').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' ')
+    }
+    if (groupKey.startsWith('npc-')) {
+      const category = groupKey.replace('npc-', '')
+      return `NPC (${category.charAt(0).toUpperCase() + category.slice(1)})`
+    }
+    return groupKey
+  }
+
+  const collectSelectedPrompts = (): SelectedPrompt[] => {
+    const selectedPrompts: SelectedPrompt[] = []
     
-    // TODO: Implement asset generation
+    Object.entries(selectedVariants).forEach(([groupKey, variantKey]) => {
+      // Get the actual prompt text (check if it was edited)
+      const originalPrompt = getOriginalPrompt(groupKey, variantKey)
+      const promptText = getPromptValue(variantKey, originalPrompt)
+      
+      selectedPrompts.push({
+        category: formatCategoryName(groupKey),
+        groupKey: groupKey,
+        prompt: promptText
+      })
+    })
+    
+    return selectedPrompts
+  }
+
+  const getOriginalPrompt = (groupKey: string, variantKey: string): string => {
+    // Extract the original prompt from the data based on the variant key
+    const index = parseInt(variantKey.split('-').pop() || '0')
+    
+    if (groupKey === 'main-character' && data.main_character) {
+      return data.main_character.variations[index] || ''
+    }
+    
+    if (groupKey.startsWith('env-') && data.environment_assets) {
+      const assetKey = groupKey.replace('env-', '')
+      return data.environment_assets.assets[assetKey]?.variations[index] || ''
+    }
+    
+    if (groupKey.startsWith('npc-') && data.npcs) {
+      const category = groupKey.replace('npc-', '')
+      return data.npcs.categories[category]?.variations[index] || ''
+    }
+    
+    if (groupKey === 'backgrounds' && data.backgrounds) {
+      return data.backgrounds.scenes[index] || ''
+    }
+    
+    return ''
+  }
+
+  const handleGenerateAssets = () => {
+    const selectedPrompts = collectSelectedPrompts()
+    console.log('Generate Assets clicked!')
+    console.log('Selected prompts:', selectedPrompts)
+    onGenerateAssets(selectedPrompts)
   }
 
   const renderEditablePrompt = (prompt: string, promptKey: string, index: number, groupKey: string) => {
