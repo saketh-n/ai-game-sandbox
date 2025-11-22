@@ -16,9 +16,9 @@ class ImageGenerationConfig:
     prompt: str
     inspiration_images: List[Union[str, Path, Image.Image, bytes]] = field(default_factory=list)
     cfg_scale: float = 7.5
-    num_inference_steps: int = 50
-    width: int = 512
-    height: int = 512
+    num_inference_steps: int = 25
+    width: int = 1024
+    height: int = 1024
     num_images: int = 1
     seed: Optional[int] = None
 
