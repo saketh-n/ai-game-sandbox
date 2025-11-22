@@ -4,4 +4,6 @@ anthropic
 loguru
 python-dotenv==1.0.0
 pydantic==2.5.3
-dotenv
+fal-client>=0.4.0
+Pillow>=10.0.0
+requests>=2.31.0

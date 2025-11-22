@@ -35,23 +35,28 @@ npm run dev
 
 ### Python Image Generation Setup
 
-1. Install dependencies using uv:
+1. Navigate to the backend directory:
+```bash
+cd backend
+```
+
+2. Install dependencies using uv:
 ```bash
 uv sync
 ```
 
-This will create a virtual environment (`.venv`) and install all dependencies.
+This will create a virtual environment (`backend/.venv`) and install all dependencies.
 
-2. Set up your FAL API key:
+3. Set up your FAL API key:
 ```bash
 cp .env.example .env
 # Edit .env and add your FAL_KEY from https://fal.ai/dashboard/keys
 ```
 
-3. Run the example or use the CLI:
+4. Run the example or use the CLI:
 ```bash
 # Run example script
-uv run src/example.py
+uv run example.py
 
 # Or use the CLI tool
 uv run generate-image "Your prompt here"
@@ -59,11 +64,13 @@ uv run generate-image "Your prompt here"
 
 ## CLI Usage
 
-Use `uv run generate-image` to run the CLI tool:
+From the `backend` directory, use `uv run generate-image` to run the CLI tool:
 
 ### Basic Usage
 
 ```bash
+cd backend
+
 # Simple generation with just a prompt
 uv run generate-image "A heroic knight character, white background"
 
@@ -144,9 +151,10 @@ uv run generate-image "Fantasy sword concept" \
 - `npm run preview` - Preview the production build
 - `npm run lint` - Run ESLint
 
-### Python
+### Python Backend
+(Run from `backend/` directory)
 - `uv sync` - Install dependencies and set up virtual environment
-- `uv run src/example.py` - Run image generation examples
+- `uv run example.py` - Run image generation examples
 - `uv run generate-image "your prompt"` - CLI tool for image generation
 
 ## Tech Stack
