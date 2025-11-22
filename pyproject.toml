@@ -25,8 +25,13 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatchling.build.targets.wheel]
+[tool.hatch.build.targets.wheel]
 packages = ["src/image_generation"]
+
+[tool.hatch.build]
+include = [
+    "src/image_generation/**/*.py",
+]
 
 [tool.ruff]
 line-length = 100

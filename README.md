@@ -37,13 +37,10 @@ npm run dev
 
 1. Install dependencies using uv:
 ```bash
-uv pip install -e .
+uv sync
 ```
 
-Or with pip:
-```bash
-pip install -e .
-```
+This will create a virtual environment (`.venv`) and install all dependencies.
 
 2. Set up your FAL API key:
 ```bash
@@ -51,57 +48,56 @@ cp .env.example .env
 # Edit .env and add your FAL_KEY from https://fal.ai/dashboard/keys
 ```
 
-3. Run the example:
+3. Run the example or use the CLI:
 ```bash
+# Run example script
 uv run src/example.py
-```
 
-Or with python:
-```bash
-python src/example.py
+# Or use the CLI tool
+uv run generate-image "Your prompt here"
 ```
 
 ## CLI Usage
 
-After installation, you can use the `generate-image` command:
+Use `uv run generate-image` to run the CLI tool:
 
 ### Basic Usage
 
 ```bash
 # Simple generation with just a prompt
-generate-image "A heroic knight character, white background"
+uv run generate-image "A heroic knight character, white background"
 
 # With inspiration images from URLs
-generate-image "Similar character" --images https://example.com/ref1.jpg
+uv run generate-image "Similar character" --images https://example.com/ref1.jpg
 
 # With local image files
-generate-image "Similar character" --images ./reference.png
+uv run generate-image "Similar character" --images ./reference.png
 
 # Mix of URLs and local files
-generate-image "Fantasy sword" --images https://example.com/sword.jpg ./ref.png
+uv run generate-image "Fantasy sword" --images https://example.com/sword.jpg ./ref.png
 ```
 
 ### Advanced Options
 
 ```bash
 # Custom model and parameters
-generate-image "Dragon character" \
+uv run generate-image "Dragon character" \
   --model fal-ai/flux/schnell \
   --steps 30 \
   --cfg 8.0 \
   --size 512x512
 
 # Generate multiple images
-generate-image "Fantasy landscape" --num-images 4
+uv run generate-image "Fantasy landscape" --num-images 4
 
 # Save to specific directory
-generate-image "Castle background" --output ./my_outputs
+uv run generate-image "Castle background" --output ./my_outputs
 
 # Use specific seed for reproducibility
-generate-image "Character design" --seed 42
+uv run generate-image "Character design" --seed 42
 
 # Quiet mode (less output)
-generate-image "Quick test" --quiet
+uv run generate-image "Quick test" --quiet
 ```
 
 ### CLI Options
@@ -121,21 +117,21 @@ generate-image "Quick test" --quiet
 
 ```bash
 # List available models
-generate-image --list-models
+uv run generate-image --list-models
 
 # Character with reference
-generate-image "Warrior character in armor" \
+uv run generate-image "Warrior character in armor" \
   --images ./character_ref.jpg \
   --cfg 7.5 \
   --steps 50
 
 # High-res background
-generate-image "Medieval castle courtyard, detailed" \
+uv run generate-image "Medieval castle courtyard, detailed" \
   --size 1920x1080 \
   --steps 40
 
 # Multiple variations
-generate-image "Fantasy sword concept" \
+uv run generate-image "Fantasy sword concept" \
   --num-images 8 \
   --output ./sword_concepts
 ```
@@ -149,9 +145,9 @@ generate-image "Fantasy sword concept" \
 - `npm run lint` - Run ESLint
 
 ### Python
+- `uv sync` - Install dependencies and set up virtual environment
 - `uv run src/example.py` - Run image generation examples
-- `uv pip install -e .` - Install the package in editable mode
-- `generate-image "your prompt"` - CLI tool for image generation (after installation)
+- `uv run generate-image "your prompt"` - CLI tool for image generation
 
 ## Tech Stack
 
