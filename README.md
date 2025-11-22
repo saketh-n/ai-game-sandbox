@@ -1,136 +1,170 @@
 # AI Video Game Asset Generator & Sandbox
 
-A full-stack application for generating video game assets using AI. Built with React/TypeScript frontend and Python FastAPI backend, powered by Claude AI.
+A beautiful, modern web application for generating video game assets using AI, with real-time sandboxing capabilities.
 
-## 🏗️ Project Structure
+## Features
 
-```
-ai-asset-gen-sandbox/
-├── frontend/          # React + TypeScript + Tailwind CSS
-│   ├── src/
-│   ├── package.json
-│   └── ...
-├── backend/           # Python FastAPI server
-│   ├── main.py
-│   ├── requirements.txt
-│   └── ...
-└── README.md
-```
+- 🎮 Video game theme input with intuitive UI
+- 🎨 Beautiful gradient background with glassmorphism design
+- ⚡ Built with React, TypeScript, and Tailwind CSS
+- 🚀 Fast development with Vite
+- 🖼️ Python-based image generation with FAL AI integration
 
-## 🚀 Quick Start
+## Getting Started
 
-### 1. Backend Setup
+### Prerequisites
 
+- Node.js (v18 or higher recommended)
+- npm or yarn
+- Python 3.9+ (for image generation)
+- [uv](https://github.com/astral-sh/uv) (recommended for Python dependency management)
+
+### Frontend Installation
+
+1. Install dependencies:
 ```bash
-# Navigate to backend directory
-cd backend
-
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create .env file with your Anthropic API key
-echo "ANTHROPIC_API_KEY=your_actual_api_key_here" > .env
-
-# Start the server
-uvicorn main:app --reload
-```
-
-The backend will run at `http://localhost:8000`
-
-### 2. Frontend Setup
-
-Open a new terminal:
-
-```bash
-# Navigate to frontend directory
-cd frontend
-
-# Install dependencies
 npm install
+```
 
-# Start development server
+2. Start the development server:
+```bash
 npm run dev
 ```
 
-The frontend will run at `http://localhost:5173`
+3. Open your browser and navigate to `http://localhost:5173`
 
-## 🎮 How It Works
+### Python Image Generation Setup
 
-1. **Enter a theme**: Type a video game theme in the input box (e.g., "cyberpunk noir detective game")
-2. **Press Enter**: The frontend sends your theme to the backend
-3. **AI Processing**: Backend calls Claude API to generate detailed asset prompts
-4. **View Results**: See AI-generated prompts for characters, environments, NPCs, and backgrounds
-
-## 📚 API Documentation
-
-Once the backend is running, visit:
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
-
-### Main Endpoint
-
-**POST** `/generate-asset-prompts`
-
-Request:
-```json
-{
-  "prompt": "cyberpunk noir detective game"
-}
+1. Install dependencies using uv:
+```bash
+uv pip install -e .
 ```
 
-Response:
-```json
-{
-  "result": "Detailed prompts for game assets..."
-}
+Or with pip:
+```bash
+pip install -e .
 ```
 
-## 🎨 Features
+2. Set up your FAL API key:
+```bash
+cp .env.example .env
+# Edit .env and add your FAL_KEY from https://fal.ai/dashboard/keys
+```
 
-- ✨ **Beautiful UI**: Modern gradient design with glassmorphism effects
-- 🤖 **AI-Powered**: Uses Claude 3.5 Sonnet for intelligent prompt generation
-- ⚡ **Fast & Responsive**: Built with Vite and FastAPI
-- 🔄 **Loading States**: Smooth animations while waiting for AI responses
-- ❌ **Error Handling**: Clear error messages if something goes wrong
-- 📝 **Type-Safe**: Full TypeScript support on frontend
+3. Run the example:
+```bash
+uv run src/example.py
+```
 
-## 🛠️ Tech Stack
+Or with python:
+```bash
+python src/example.py
+```
+
+## CLI Usage
+
+After installation, you can use the `generate-image` command:
+
+### Basic Usage
+
+```bash
+# Simple generation with just a prompt
+generate-image "A heroic knight character, white background"
+
+# With inspiration images from URLs
+generate-image "Similar character" --images https://example.com/ref1.jpg
+
+# With local image files
+generate-image "Similar character" --images ./reference.png
+
+# Mix of URLs and local files
+generate-image "Fantasy sword" --images https://example.com/sword.jpg ./ref.png
+```
+
+### Advanced Options
+
+```bash
+# Custom model and parameters
+generate-image "Dragon character" \
+  --model fal-ai/flux/schnell \
+  --steps 30 \
+  --cfg 8.0 \
+  --size 512x512
+
+# Generate multiple images
+generate-image "Fantasy landscape" --num-images 4
+
+# Save to specific directory
+generate-image "Castle background" --output ./my_outputs
+
+# Use specific seed for reproducibility
+generate-image "Character design" --seed 42
+
+# Quiet mode (less output)
+generate-image "Quick test" --quiet
+```
+
+### CLI Options
+
+- `--images`, `-i`: Inspiration images (URLs or file paths)
+- `--model`, `-m`: Model name (default: fal-ai/flux/dev)
+- `--cfg`, `-c`: CFG scale/guidance (default: 7.5)
+- `--steps`, `-s`: Inference steps (default: 25)
+- `--size`: Image size as WIDTHxHEIGHT (default: 1024x1024)
+- `--num-images`, `-n`: Number of images (default: 1)
+- `--seed`: Random seed for reproducibility
+- `--output`, `-o`: Output directory (default: ./output)
+- `--quiet`, `-q`: Suppress progress messages
+- `--list-models`: List available models
+
+### Examples
+
+```bash
+# List available models
+generate-image --list-models
+
+# Character with reference
+generate-image "Warrior character in armor" \
+  --images ./character_ref.jpg \
+  --cfg 7.5 \
+  --steps 50
+
+# High-res background
+generate-image "Medieval castle courtyard, detailed" \
+  --size 1920x1080 \
+  --steps 40
+
+# Multiple variations
+generate-image "Fantasy sword concept" \
+  --num-images 8 \
+  --output ./sword_concepts
+```
+
+## Available Scripts
 
 ### Frontend
-- **React 18** - UI library
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **Vite** - Build tool
+- `npm run dev` - Start the development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview the production build
+- `npm run lint` - Run ESLint
+
+### Python
+- `uv run src/example.py` - Run image generation examples
+- `uv pip install -e .` - Install the package in editable mode
+- `generate-image "your prompt"` - CLI tool for image generation (after installation)
+
+## Tech Stack
+
+### Frontend
+- **React** - UI library
+- **TypeScript** - Type-safe JavaScript
+- **Tailwind CSS** - Utility-first CSS framework
+- **Vite** - Next-generation frontend tooling
 
 ### Backend
-- **Python 3.8+** - Programming language
-- **FastAPI** - Web framework
-- **Anthropic Claude API** - AI model
-- **Uvicorn** - ASGI server
-
-## 🔧 Configuration
-
-### Backend Environment Variables
-
-Create a `.env` file in the `backend/` directory:
-
-```env
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
-```
-
-Get your API key from: https://console.anthropic.com/
-
-### CORS Configuration
-
-The backend is configured to accept requests from:
-- `http://localhost:5173` (Vite default)
-- `http://localhost:3000` (Alternative port)
+- **Python 3.9+** - Image generation module
+- **FAL AI** - AI image generation API
+- **uv** - Fast Python package manager
 
 ## Prompts
 The following are prompt templates for generating various assets
@@ -154,6 +188,9 @@ Make this background fit the scene and well visible. Focus on making the backgro
 Make this item be visible within the center of the image. Make the background white around the item
 ```
 
-## 📝 License
+## License
 
 MIT
+
+
+
