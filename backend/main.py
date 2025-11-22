@@ -104,7 +104,7 @@ async def generate_asset_prompts(request: PromptRequest):
     logger.info(f"[{request_id}] Cache miss. Calling Claude API...")
 
     try:
-        claude_prompt = f"""You are a professional game artist assistant. Based on the following video game description, generate image generation prompts for all required assets.
+        claude_prompt = f"""You are a professional game artist assistant. Based on the following video game description, generate image generation prompts for the three core assets needed.
 
         Game Description:
         \"{request.prompt}\"
@@ -115,45 +115,25 @@ async def generate_asset_prompts(request: PromptRequest):
         "main_character": {{
             "description": "Brief overall description of the protagonist",
             "variations": [
-            "Detailed prompt for variation 1 -- highly descriptive, include art style, lighting, pose, colors, mood, camera angle, etc.",
+            "Detailed prompt for variation 1 -- highly descriptive, include art style, lighting, pose, colors, mood, camera angle, character centered on white background",
             "Detailed prompt for variation 2...",
-            "..."
+            "Detailed prompt for variation 3..."
             ]
         }},
-        "environment_assets": {{
-            "key_elements_needed": ["ground tiles", "trees", "rocks", "props", "..."],
-            "assets": {{
-            "ground_tiles": {{
-                "variations": ["prompt 1", "prompt 2", "..."]
-            }},
-            "trees": {{
-                "variations": ["prompt 1", "prompt 2", "..."]
-            }},
-            "rocks": {{
-                "variations": ["prompt 1", "..."]
-            }}
-            // add more assets as needed
-            }}
+        "background": {{
+            "description": "Brief description of the game environment/setting",
+            "variations": [
+            "Full scene background prompt 1 -- parallax-ready, atmospheric, detailed, no characters",
+            "Full scene background prompt 2...",
+            "Full scene background prompt 3..."
+            ]
         }},
-        "npcs": {{
-            "categories": {{
-            "allies": {{
-                "variations": ["friendly knight prompt...", "healer prompt...", "..."]
-            }},
-            "enemies": {{
-                "variations": ["goblin warrior...", "dark sorcerer...", "..."]
-            }},
-            "neutral": {{
-                "variations": ["merchant prompt...", "villager prompt...", "..."]
-            }}
-            }}
-        }},
-        "backgrounds": {{
-            "scenes": [
-            "Full scene prompt for main hub / level 1 background -- parallax-ready, atmospheric, detailed",
-            "Menu background prompt -- cinematic, moody",
-            "Boss arena background prompt...",
-            "..."
+        "collectible_item": {{
+            "description": "Brief description of the collectible/power-up",
+            "variations": [
+            "Detailed item prompt 1 -- centered on white background, clear and visible, isometric or front view",
+            "Detailed item prompt 2...",
+            "Detailed item prompt 3..."
             ]
         }}
         }}
@@ -164,7 +144,9 @@ async def generate_asset_prompts(request: PromptRequest):
         - Include art style, lighting, composition, color palette, mood, and camera perspective.
         - Use double quotes for all JSON keys and strings.
         - Do not escape newlines inside strings — keep prompts readable.
-        - If a section has only one variation, still put it in a list with one item.
+        - Generate exactly 3 variations for each asset type.
+        - For main character and collectible: ensure white/clean background for easy sprite extraction.
+        - For background: focus on environment only, no characters.
         - Be creative and consistent with the game theme."""
 
         logger.info(f"[{request_id}] Calling Claude 4.5 Sonnet...")

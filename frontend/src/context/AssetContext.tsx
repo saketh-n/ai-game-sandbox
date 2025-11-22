@@ -5,23 +5,13 @@ export interface AssetData {
     description?: string
     variations: string[]
   }
-  environment_assets?: {
-    key_elements_needed: string[]
-    assets: {
-      [key: string]: {
-        variations: string[]
-      }
-    }
+  background?: {
+    description?: string
+    variations: string[]
   }
-  npcs?: {
-    categories: {
-      [key: string]: {
-        variations: string[]
-      }
-    }
-  }
-  backgrounds?: {
-    scenes: string[]
+  collectible_item?: {
+    description?: string
+    variations: string[]
   }
 }
 

@@ -20,23 +20,14 @@ const AssetPromptsDisplay: React.FC<AssetPromptsDisplayProps> = ({ data, origina
       defaults['main-character'] = 'main-character-0'
     }
     
-    // Environment assets - select first variation for each asset type
-    if (data.environment_assets?.assets) {
-      Object.keys(data.environment_assets.assets).forEach(assetKey => {
-        defaults[`env-${assetKey}`] = `env-${assetKey}-0`
-      })
+    // Background - select first variation
+    if (data.background && data.background.variations.length > 0) {
+      defaults['background'] = 'background-0'
     }
     
-    // NPCs - select first variation for each category
-    if (data.npcs?.categories) {
-      Object.keys(data.npcs.categories).forEach(category => {
-        defaults[`npc-${category}`] = `npc-${category}-0`
-      })
-    }
-    
-    // Backgrounds - select first scene
-    if (data.backgrounds?.scenes && data.backgrounds.scenes.length > 0) {
-      defaults['backgrounds'] = 'background-0'
+    // Collectible item - select first variation
+    if (data.collectible_item && data.collectible_item.variations.length > 0) {
+      defaults['collectible-item'] = 'collectible-item-0'
     }
     
     return defaults
@@ -75,17 +66,8 @@ const AssetPromptsDisplay: React.FC<AssetPromptsDisplayProps> = ({ data, origina
 
   const formatCategoryName = (groupKey: string): string => {
     if (groupKey === 'main-character') return 'Main Character'
-    if (groupKey === 'backgrounds') return 'Background'
-    if (groupKey.startsWith('env-')) {
-      const assetName = groupKey.replace('env-', '')
-      return assetName.split('_').map(word => 
-        word.charAt(0).toUpperCase() + word.slice(1)
-      ).join(' ')
-    }
-    if (groupKey.startsWith('npc-')) {
-      const category = groupKey.replace('npc-', '')
-      return `NPC (${category.charAt(0).toUpperCase() + category.slice(1)})`
-    }
+    if (groupKey === 'background') return 'Background'
+    if (groupKey === 'collectible-item') return 'Collectible Item'
     return groupKey
   }
 
@@ -115,18 +97,12 @@ const AssetPromptsDisplay: React.FC<AssetPromptsDisplayProps> = ({ data, origina
       return data.main_character.variations[index] || ''
     }
     
-    if (groupKey.startsWith('env-') && data.environment_assets) {
-      const assetKey = groupKey.replace('env-', '')
-      return data.environment_assets.assets[assetKey]?.variations[index] || ''
+    if (groupKey === 'background' && data.background) {
+      return data.background.variations[index] || ''
     }
     
-    if (groupKey.startsWith('npc-') && data.npcs) {
-      const category = groupKey.replace('npc-', '')
-      return data.npcs.categories[category]?.variations[index] || ''
-    }
-    
-    if (groupKey === 'backgrounds' && data.backgrounds) {
-      return data.backgrounds.scenes[index] || ''
+    if (groupKey === 'collectible-item' && data.collectible_item) {
+      return data.collectible_item.variations[index] || ''
     }
     
     return ''
@@ -206,33 +182,6 @@ const AssetPromptsDisplay: React.FC<AssetPromptsDisplayProps> = ({ data, origina
     )
   }
 
-  const renderSubSection = (title: string, sectionKey: string, content: React.ReactNode) => {
-    const isOpen = openSections[sectionKey]
-    return (
-      <div className="mb-3">
-        <button
-          onClick={() => toggleSection(sectionKey)}
-          className="w-full flex items-center justify-between px-3 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 rounded-lg transition-colors"
-        >
-          <span className="text-base font-medium text-purple-200">{title}</span>
-          <svg
-            className={`w-4 h-4 text-purple-300 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-        {isOpen && (
-          <div className="mt-2 pl-3">
-            {content}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-8 border border-white/20 animate-fade-in">
       {/* Header */}
@@ -281,69 +230,41 @@ const AssetPromptsDisplay: React.FC<AssetPromptsDisplayProps> = ({ data, origina
         </div>
       )}
 
-      {/* Environment Assets Section */}
-      {data.environment_assets && renderCollapsibleSection(
-        '🌍 Environment Assets',
-        'environment',
+      {/* Background Section */}
+      {data.background && renderCollapsibleSection(
+        '🌍 Background',
+        'background',
         <div>
-          {data.environment_assets.key_elements_needed && (
+          {data.background.description && (
             <div className="mb-4 p-3 bg-indigo-500/10 rounded-lg">
-              <span className="text-sm font-medium text-purple-300">Key Elements:</span>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {data.environment_assets.key_elements_needed.map((element, index) => (
-                  <span
-                    key={index}
-                    className="px-2 py-1 bg-purple-500/20 text-purple-200 text-xs rounded-full"
-                  >
-                    {element}
-                  </span>
-                ))}
-              </div>
+              <span className="text-sm font-medium text-purple-300">Description:</span>
+              <p className="text-purple-100 text-sm mt-1">{data.background.description}</p>
             </div>
           )}
-          <div className="space-y-3">
-            {Object.entries(data.environment_assets.assets).map(([assetKey, assetData]) =>
-              renderSubSection(
-                assetKey.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
-                `env-${assetKey}`,
-                <div className="space-y-2">
-                  {assetData.variations.map((variation, index) =>
-                    renderEditablePrompt(variation, `env-${assetKey}-${index}`, index, `env-${assetKey}`)
-                  )}
-                </div>
-              )
+          <div className="space-y-2">
+            {data.background.variations.map((variation, index) =>
+              renderEditablePrompt(variation, `background-${index}`, index, 'background')
             )}
           </div>
         </div>
       )}
 
-      {/* NPCs Section */}
-      {data.npcs && renderCollapsibleSection(
-        '👥 NPCs',
-        'npcs',
-        <div className="space-y-3">
-          {Object.entries(data.npcs.categories).map(([category, categoryData]) =>
-            renderSubSection(
-              category.charAt(0).toUpperCase() + category.slice(1),
-              `npc-${category}`,
-              <div className="space-y-2">
-                {categoryData.variations.map((variation, index) =>
-                  renderEditablePrompt(variation, `npc-${category}-${index}`, index, `npc-${category}`)
-                )}
-              </div>
-            )
+      {/* Collectible Item Section */}
+      {data.collectible_item && renderCollapsibleSection(
+        '💎 Collectible Item',
+        'collectible-item',
+        <div>
+          {data.collectible_item.description && (
+            <div className="mb-4 p-3 bg-indigo-500/10 rounded-lg">
+              <span className="text-sm font-medium text-purple-300">Description:</span>
+              <p className="text-purple-100 text-sm mt-1">{data.collectible_item.description}</p>
+            </div>
           )}
-        </div>
-      )}
-
-      {/* Backgrounds Section */}
-      {data.backgrounds && renderCollapsibleSection(
-        '🎨 Background Scenes',
-        'backgrounds',
-        <div className="space-y-2">
-          {data.backgrounds.scenes.map((scene, index) =>
-            renderEditablePrompt(scene, `background-${index}`, index, 'backgrounds')
-          )}
+          <div className="space-y-2">
+            {data.collectible_item.variations.map((variation, index) =>
+              renderEditablePrompt(variation, `collectible-item-${index}`, index, 'collectible-item')
+            )}
+          </div>
         </div>
       )}
 
