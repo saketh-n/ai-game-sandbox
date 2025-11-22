@@ -1,3 +1,19 @@
+# Frontend
+frontend/node_modules
+frontend/dist
+frontend/dist-ssr
+frontend/*.local
+
+# Backend
+backend/__pycache__/
+backend/*.py[cod]
+backend/*$py.class
+backend/venv/
+backend/env/
+backend/.env
+
+/node_modules
+
 # Logs
 logs
 *.log
@@ -6,11 +22,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
 
 # Editor directories and files
 .vscode/*
@@ -23,3 +34,6 @@ dist-ssr
 *.sln
 *.sw?
 
+# OS
+.DS_Store
+Thumbs.db

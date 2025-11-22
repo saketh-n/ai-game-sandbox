@@ -1,48 +1,136 @@
 # AI Video Game Asset Generator & Sandbox
 
-A beautiful, modern web application for generating video game assets using AI, with real-time sandboxing capabilities.
+A full-stack application for generating video game assets using AI. Built with React/TypeScript frontend and Python FastAPI backend, powered by Claude AI.
 
-## Features
+## 🏗️ Project Structure
 
-- 🎮 Video game theme input with intuitive UI
-- 🎨 Beautiful gradient background with glassmorphism design
-- ⚡ Built with React, TypeScript, and Tailwind CSS
-- 🚀 Fast development with Vite
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js (v18 or higher recommended)
-- npm or yarn
-
-### Installation
-
-1. Install dependencies:
-```bash
-npm install
+```
+ai-asset-gen-sandbox/
+├── frontend/          # React + TypeScript + Tailwind CSS
+│   ├── src/
+│   ├── package.json
+│   └── ...
+├── backend/           # Python FastAPI server
+│   ├── main.py
+│   ├── requirements.txt
+│   └── ...
+└── README.md
 ```
 
-2. Start the development server:
+## 🚀 Quick Start
+
+### 1. Backend Setup
+
 ```bash
+# Navigate to backend directory
+cd backend
+
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Create .env file with your Anthropic API key
+echo "ANTHROPIC_API_KEY=your_actual_api_key_here" > .env
+
+# Start the server
+uvicorn main:app --reload
+```
+
+The backend will run at `http://localhost:8000`
+
+### 2. Frontend Setup
+
+Open a new terminal:
+
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start development server
 npm run dev
 ```
 
-3. Open your browser and navigate to `http://localhost:5173`
+The frontend will run at `http://localhost:5173`
 
-## Available Scripts
+## 🎮 How It Works
 
-- `npm run dev` - Start the development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview the production build
-- `npm run lint` - Run ESLint
+1. **Enter a theme**: Type a video game theme in the input box (e.g., "cyberpunk noir detective game")
+2. **Press Enter**: The frontend sends your theme to the backend
+3. **AI Processing**: Backend calls Claude API to generate detailed asset prompts
+4. **View Results**: See AI-generated prompts for characters, environments, NPCs, and backgrounds
 
-## Tech Stack
+## 📚 API Documentation
 
-- **React** - UI library
-- **TypeScript** - Type-safe JavaScript
-- **Tailwind CSS** - Utility-first CSS framework
-- **Vite** - Next-generation frontend tooling
+Once the backend is running, visit:
+- **Swagger UI**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
+
+### Main Endpoint
+
+**POST** `/generate-asset-prompts`
+
+Request:
+```json
+{
+  "prompt": "cyberpunk noir detective game"
+}
+```
+
+Response:
+```json
+{
+  "result": "Detailed prompts for game assets..."
+}
+```
+
+## 🎨 Features
+
+- ✨ **Beautiful UI**: Modern gradient design with glassmorphism effects
+- 🤖 **AI-Powered**: Uses Claude 3.5 Sonnet for intelligent prompt generation
+- ⚡ **Fast & Responsive**: Built with Vite and FastAPI
+- 🔄 **Loading States**: Smooth animations while waiting for AI responses
+- ❌ **Error Handling**: Clear error messages if something goes wrong
+- 📝 **Type-Safe**: Full TypeScript support on frontend
+
+## 🛠️ Tech Stack
+
+### Frontend
+- **React 18** - UI library
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Styling
+- **Vite** - Build tool
+
+### Backend
+- **Python 3.8+** - Programming language
+- **FastAPI** - Web framework
+- **Anthropic Claude API** - AI model
+- **Uvicorn** - ASGI server
+
+## 🔧 Configuration
+
+### Backend Environment Variables
+
+Create a `.env` file in the `backend/` directory:
+
+```env
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+```
+
+Get your API key from: https://console.anthropic.com/
+
+### CORS Configuration
+
+The backend is configured to accept requests from:
+- `http://localhost:5173` (Vite default)
+- `http://localhost:3000` (Alternative port)
 
 ## Prompts
 The following are prompt templates for generating various assets
@@ -66,9 +154,6 @@ Make this background fit the scene and well visible. Focus on making the backgro
 Make this item be visible within the center of the image. Make the background white around the item
 ```
 
-## License
+## 📝 License
 
 MIT
-
-
-
