@@ -64,6 +64,7 @@ Make this background fit the scene and well visible. Focus on making the backgro
 ```
 {user_instruction}
 Make this item be visible within the center of the image. Make the background white around the item
+```
 
 ## License
 
