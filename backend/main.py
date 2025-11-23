@@ -108,6 +108,7 @@ class GenerateGameResponse(BaseModel):
     platforms_detected: int = Field(..., description="Number of platforms detected by AI")
     gaps_detected: int = Field(..., description="Number of gaps detected")
     spawn_point: dict = Field(..., description="Character spawn coordinates")
+    debug_frames: List[str] = Field(default=[], description="Base64 encoded debug frames for visualization")
 
 image_generator = ImageGenerator(api_key=os.getenv("FAL_KEY"))
 
@@ -530,7 +531,7 @@ async def generate_game(request: GenerateGameRequest):
 
             # Generate game with URLs (runs in thread pool since it's blocking)
             logger.info(f"[{request_id}] Generating game with Claude Vision analysis...")
-            game_html, scene_config = await asyncio.to_thread(
+            game_html, scene_config, debug_frames = await asyncio.to_thread(
                 game_gen.generate_game_html_with_urls,
                 character_sprite_path=str(char_path),
                 character_sprite_url=request.character_url,
@@ -541,6 +542,7 @@ async def generate_game(request: GenerateGameRequest):
             )
 
             logger.info(f"[{request_id}] Game HTML generated: {len(game_html)} characters")
+            logger.info(f"[{request_id}] Debug frames extracted: {len(debug_frames)}")
 
             # Extract statistics
             platforms_detected = len(scene_config["physics"]["platforms"])
@@ -555,7 +557,8 @@ async def generate_game(request: GenerateGameRequest):
                 scene_config=scene_config,
                 platforms_detected=platforms_detected,
                 gaps_detected=gaps_detected,
-                spawn_point=spawn_point
+                spawn_point=spawn_point,
+                debug_frames=debug_frames
             )
 
         except httpx.HTTPStatusError as e:
