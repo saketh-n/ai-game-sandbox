@@ -1,0 +1,193 @@
+{
+  "name": "PineappleWarriorGame",
+  "background": {
+    "path": "test_background.png",
+    "width": 1024,
+    "height": 768
+  },
+  "character": {
+    "sprite_path": "playable_game/assets/processed_test_characeter_sprites.png",
+    "frame_width": 125,
+    "frame_height": 187,
+    "num_frames": 8,
+    "spawn_x": 100,
+    "spawn_y": 625
+  },
+  "physics": {
+    "gravity": 600,
+    "platforms": [
+      {
+        "name": "Bottom Left Ground",
+        "x": 0,
+        "y": 655,
+        "width": 250,
+        "height": 113,
+        "walkable": true
+      },
+      {
+        "name": "Bottom Center-Left Ground",
+        "x": 250,
+        "y": 655,
+        "width": 280,
+        "height": 113,
+        "walkable": true
+      },
+      {
+        "name": "Bottom Center-Right Ground",
+        "x": 530,
+        "y": 655,
+        "width": 494,
+        "height": 113,
+        "walkable": true
+      },
+      {
+        "name": "Top Left Floating Island",
+        "x": 30,
+        "y": 400,
+        "width": 145,
+        "height": 35,
+        "walkable": true
+      },
+      {
+        "name": "Top Center-Left Floating Island",
+        "x": 215,
+        "y": 485,
+        "width": 315,
+        "height": 35,
+        "walkable": true
+      },
+      {
+        "name": "Top Center Bridge Platform",
+        "x": 555,
+        "y": 485,
+        "width": 145,
+        "height": 35,
+        "walkable": true
+      },
+      {
+        "name": "Top Right Floating Island",
+        "x": 800,
+        "y": 420,
+        "width": 210,
+        "height": 35,
+        "walkable": true
+      }
+    ],
+    "bounds": {
+      "x": 0,
+      "y": 0,
+      "width": 1024,
+      "height": 768
+    }
+  },
+  "player": {
+    "walk_speed": 180,
+    "jump_velocity": -380,
+    "max_jumps": 2
+  },
+  "analysis": {
+    "platforms": [
+      {
+        "name": "Bottom Left Ground",
+        "x": 0,
+        "y": 655,
+        "width": 250,
+        "height": 113,
+        "walkable": true
+      },
+      {
+        "name": "Bottom Center-Left Ground",
+        "x": 250,
+        "y": 655,
+        "width": 280,
+        "height": 113,
+        "walkable": true
+      },
+      {
+        "name": "Bottom Center-Right Ground",
+        "x": 530,
+        "y": 655,
+        "width": 494,
+        "height": 113,
+        "walkable": true
+      },
+      {
+        "name": "Top Left Floating Island",
+        "x": 30,
+        "y": 400,
+        "width": 145,
+        "height": 35,
+        "walkable": true
+      },
+      {
+        "name": "Top Center-Left Floating Island",
+        "x": 215,
+        "y": 485,
+        "width": 315,
+        "height": 35,
+        "walkable": true
+      },
+      {
+        "name": "Top Center Bridge Platform",
+        "x": 555,
+        "y": 485,
+        "width": 145,
+        "height": 35,
+        "walkable": true
+      },
+      {
+        "name": "Top Right Floating Island",
+        "x": 800,
+        "y": 420,
+        "width": 210,
+        "height": 35,
+        "walkable": true
+      }
+    ],
+    "gaps": [
+      {
+        "description": "Water gap on bottom level",
+        "from_platform": "Bottom Center-Left Ground",
+        "to_platform": "Bottom Center-Right Ground",
+        "width": 0
+      },
+      {
+        "description": "Gap between top left and center-left islands",
+        "from_platform": "Top Left Floating Island",
+        "to_platform": "Top Center-Left Floating Island",
+        "width": 40
+      },
+      {
+        "description": "Gap between center-left island and center bridge",
+        "from_platform": "Top Center-Left Floating Island",
+        "to_platform": "Top Center Bridge Platform",
+        "width": 25
+      },
+      {
+        "description": "Gap between center bridge and right island",
+        "from_platform": "Top Center Bridge Platform",
+        "to_platform": "Top Right Floating Island",
+        "width": 100
+      },
+      {
+        "description": "Vertical gap from bottom to floating islands",
+        "from_platform": "Bottom Left Ground",
+        "to_platform": "Top Left Floating Island",
+        "width": 0
+      }
+    ],
+    "spawn": {
+      "x": 100,
+      "y": 625
+    },
+    "notes": [
+      "Trees are decorative and not walkable",
+      "Wooden fences/bridges are decorative overlays on platforms",
+      "Sky and water areas provide no collision",
+      "All floating islands require jumping to reach",
+      "Bottom ground level has continuous walkable surface with visual water underneath in some sections"
+    ],
+    "width": 1024,
+    "height": 768
+  }
+}
