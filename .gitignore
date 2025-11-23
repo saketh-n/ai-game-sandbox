@@ -3,7 +3,7 @@ frontend/node_modules
 frontend/dist
 frontend/dist-ssr
 frontend/*.local
-frontend/.vite*
+frontend/.vite
 
 # Backend
 backend/__pycache__/
@@ -12,6 +12,7 @@ backend/*$py.class
 backend/venv/
 backend/env/
 backend/.env
+backend/playable_game/
 
 /node_modules
 
