@@ -44,7 +44,7 @@ const GenerateAssets = () => {
 
     // Start generating images
     generateAllImages(initialAssets)
-  }, [selectedPrompts, navigate])
+  }, [])
 
   const generateSingleImage = async (
     index: number, 
