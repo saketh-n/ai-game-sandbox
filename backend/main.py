@@ -941,6 +941,40 @@ async def generate_game(request: GenerateGameRequest):
     logger.info(f"[{request_id}] Character URL: {request.character_url}")
     logger.info(f"[{request_id}] Frames: {request.num_frames}, Name: {request.game_name}")
 
+
+    # Check cache first
+    cached_game = game_cache.get_cached_game(
+        background_url=request.background_url,
+        character_url=request.character_url,
+        mob_url=request.mob_url,
+        collectible_url=request.collectible_url,
+        num_frames=request.num_frames
+    )
+    
+    if cached_game:
+        logger.success(f"[{request_id}] Cache hit! Returning cached game")
+        logger.info(f"[{request_id}] Cache key: {cached_game['cache_key']}")
+        logger.info(f"[{request_id}] Cached at: {cached_game.get('cached_at', 'unknown')}")
+        
+        # Extract data from cache
+        scene_config = cached_game['scene_config']
+        platforms_detected = len(scene_config['physics']['platforms'])
+        gaps_detected = len(scene_config['analysis'].get('gaps', []))
+        spawn_point = scene_config['analysis']['spawn']
+        
+        return GenerateGameResponse(
+            game_html=cached_game['game_html'],
+            scene_config=scene_config,
+            platforms_detected=platforms_detected,
+            gaps_detected=gaps_detected,
+            spawn_point=spawn_point,
+            debug_frames=cached_game.get('debug_frames', []),
+            debug_platforms="",  # Platform debug image not cached currently
+            debug_collectibles=cached_game.get('debug_collectibles', [])
+        )
+    
+    logger.info(f"[{request_id}] Cache miss. Generating new game...")
+
     # Component-level cache checking
     logger.info(f"[{request_id}] Checking component-level cache...")
     cache_status = {}
@@ -950,7 +984,39 @@ async def generate_game(request: GenerateGameRequest):
         temp_path = Path(temp_dir)
 
         try:
-            # Initialize game generator (needed early for sprite processing)
+            # Download background image for analysis
+            logger.info(f"[{request_id}] Downloading background image for analysis...")
+            async with httpx.AsyncClient(timeout=30.0) as http_client:
+                bg_response = await http_client.get(request.background_url)
+                bg_response.raise_for_status()
+
+                bg_path = temp_path / "background.png"
+                bg_path.write_bytes(bg_response.content)
+                logger.info(f"[{request_id}] Background downloaded: {len(bg_response.content)} bytes")
+
+            # Download character sprite for processing
+            logger.info(f"[{request_id}] Downloading character sprite for processing...")
+            async with httpx.AsyncClient(timeout=30.0) as http_client:
+                char_response = await http_client.get(request.character_url)
+                char_response.raise_for_status()
+
+                char_path = temp_path / "character.png"
+                char_path.write_bytes(char_response.content)
+                logger.info(f"[{request_id}] Character sprite downloaded: {len(char_response.content)} bytes")
+
+            # Download mob sprite if provided
+            mob_path = None
+            if request.mob_url:
+                logger.info(f"[{request_id}] Downloading mob sprite for processing...")
+                async with httpx.AsyncClient(timeout=30.0) as http_client:
+                    mob_response = await http_client.get(request.mob_url)
+                    mob_response.raise_for_status()
+
+                    mob_path = temp_path / "mob.png"
+                    mob_path.write_bytes(mob_response.content)
+                    logger.info(f"[{request_id}] Mob sprite downloaded: {len(mob_response.content)} bytes")
+
+            # Initialize game generator (need it for sprite_analyzer)
             output_dir = temp_path / "generated_game"
             game_gen = GameGenerator(output_dir=str(output_dir))
 
@@ -1102,6 +1168,23 @@ async def generate_game(request: GenerateGameRequest):
                         collectible_sprites
                     )
                     cache_status['collectible'] = 'MISS'
+
+            # Generate game with URLs (runs in thread pool since it's blocking)
+            logger.info(f"[{request_id}] Generating game with Claude Vision analysis...")
+            game_html, scene_config, debug_frames = await asyncio.to_thread(
+                game_gen.generate_game_html_with_urls,
+                character_sprite_path=str(char_path),
+                character_sprite_url=request.character_url,
+                background_image_path=str(bg_path),
+                background_image_url=request.background_url,
+                num_frames=request.num_frames,
+                game_name=request.game_name,
+                collectible_sprites=[],  # Will be updated below if collectibles exist
+                collectible_positions=[],  # Will be updated below if collectibles exist
+                collectible_metadata=[],  # Will be updated below if collectibles exist
+                mob_sprite_path=str(mob_path) if mob_path else None,
+                mob_sprite_url=request.mob_url
+            )
             
             # Log cache performance
             hits = sum(1 for v in cache_status.values() if v == 'HIT')
@@ -1158,8 +1241,8 @@ async def generate_game(request: GenerateGameRequest):
             if collectible_sprites:
                 logger.info(f"[{request_id}] Generating collectible positions...")
                 collectible_positions = generate_collectible_positions(
-                    platforms=platform_analysis["platforms"],
-                    num_collectibles=min(15, len(platform_analysis["platforms"]) * 2)
+                    platforms=scene_config["physics"]["platforms"],
+                    num_collectibles=min(15, max(8, len(scene_config["physics"]["platforms"]) * 3))
                 )
                 for pos in collectible_positions:
                     pos['sprite_index'] = pos['sprite_index'] % len(collectible_sprites)
@@ -1223,6 +1306,28 @@ async def generate_game(request: GenerateGameRequest):
                         "status_effect": metadata.get("status_effect", "Unknown Effect"),
                         "description": metadata.get("description", "")
                     })
+            
+            # Save to cache for future requests
+            logger.info(f"[{request_id}] Caching game for future requests...")
+            try:
+                game_cache.save_game(
+                    background_url=request.background_url,
+                    character_url=request.character_url,
+                    mob_url=request.mob_url,
+                    collectible_url=request.collectible_url,
+                    num_frames=request.num_frames,
+                    game_html=game_html,
+                    scene_config=scene_config,
+                    debug_frames=debug_frames if request.debug_options.get("show_sprite_frames", True) else [],
+                    debug_collectibles=debug_collectibles_data if request.debug_options.get("show_collectibles", True) else [],
+                    platform_analysis=scene_config.get("analysis"),
+                    collectible_metadata=collectible_metadata,
+                    collectible_sprites=collectible_sprites
+                )
+                logger.success(f"[{request_id}] Game cached successfully")
+            except Exception as cache_error:
+                logger.warning(f"[{request_id}] Failed to cache game: {cache_error}")
+                # Don't fail the request if caching fails
             
             return GenerateGameResponse(
                 game_html=game_html,

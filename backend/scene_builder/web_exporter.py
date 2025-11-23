@@ -71,8 +71,8 @@ class WebGameExporter:
         collectible_sprites: list = None,
         collectible_positions: list = None,
         collectible_metadata: list = None,
-        mob_sprite_data_url: str = None,
-        mob_config: Dict = None
+        mob_sprite_path: str = None,
+        mob_data: dict = None
     ) -> str:
         """Generate complete HTML5 game"""
 
@@ -82,7 +82,9 @@ class WebGameExporter:
         collectible_metadata_json = json.dumps(collectible_metadata if collectible_metadata else [])
         
         # Prepare mob data
-        has_mob = mob_sprite_data_url is not None and mob_config is not None
+        has_mob = mob_sprite_path is not None and mob_data is not None
+        mob_sprite_data_url = mob_sprite_path
+        mob_config = mob_data
         mob_sprite_url = mob_sprite_data_url if has_mob else ''
         mob_frame_width = mob_config['frame_width'] if has_mob else 0
         mob_frame_height = mob_config['frame_height'] if has_mob else 0
@@ -212,6 +214,29 @@ class WebGameExporter:
             opacity: 1;
         }}
 
+        #game-notification {{
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px 50px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 1000;
+            font-size: 1.8rem;
+            font-weight: bold;
+            text-align: center;
+            border: 3px solid rgba(255,255,255,0.5);
+        }}
+
+        #game-notification.show {{
+            opacity: 1;
+        }}
+
         .notification-name {{
             font-size: 1.4rem;
             margin-bottom: 8px;
@@ -335,6 +360,7 @@ class WebGameExporter:
         </div>
         <div id="dynamic-stats"></div>
     </div>
+    <div id="game-notification"></div>
     <div id="game-container" style="display:none;"></div>
 
     <div class="controls" id="controls" style="display:none;">
@@ -493,6 +519,35 @@ class WebGameExporter:
             }}
 
             create() {{
+                // Initialize global game state for difficulty tracking and level progression
+                if (!window.gameState || !this.scene.key) {{
+                    window.gameState = {{
+                        level: 1,
+                        gravityMultiplier: 1.0,
+                        speedMultiplier: 1.0,
+                        jumpMultiplier: 1.0,
+                        gameId: Date.now()  // Unique ID for this game session
+                    }};
+                }}
+
+                // Store game ID to detect new game loads
+                if (!this.gameId) {{
+                    this.gameId = window.gameState.gameId;
+                }} else if (this.gameId !== window.gameState.gameId) {{
+                    // New game detected - reset everything
+                    window.gameState = {{
+                        level: 1,
+                        gravityMultiplier: 1.0,
+                        speedMultiplier: 1.0,
+                        jumpMultiplier: 1.0,
+                        gameId: Date.now()
+                    }};
+                    this.gameId = window.gameState.gameId;
+                }}
+
+                // Win condition flag
+                this.hasWon = false;
+
                 // Initialize player stats
                 this.playerHealth = 100;
                 this.playerMaxHealth = 100;
@@ -501,7 +556,7 @@ class WebGameExporter:
                     gold: 0,
                     energy: 0
                 }};
-                
+
                 // Add background
                 this.bg = this.add.image(0, 0, 'background').setOrigin(0, 0);
 
@@ -594,11 +649,24 @@ class WebGameExporter:
                     return false;
                 }}, this);
 
-                // Create collectibles
+                // Create projectiles group
+                this.projectiles = this.physics.add.group();
+
+                // Create collectibles (clear any existing group first)
                 const collectiblePositions = {collectible_positions_json};
+                if (this.collectibles && this.collectibles.children) {{
+                    this.collectibles.clear(true, true);  // Remove all children and destroy them
+                }}
                 this.collectibles = this.physics.add.group();
                 this.collectedCount = 0;
-                
+                this.totalCollectibles = collectiblePositions.length;
+
+                console.log('=== LEVEL START ===');
+                console.log('Collectibles to create:', this.totalCollectibles);
+                console.log('Starting count:', this.collectedCount);
+                console.log('Current level:', window.gameState.level);
+                console.log('Has won flag:', this.hasWon);
+
                 if (collectiblePositions.length > 0 && this.collectibleSprites.length > 0) {{
                     console.log('Creating ' + collectiblePositions.length + ' collectibles...');
                     
@@ -735,6 +803,14 @@ class WebGameExporter:
                         mob.setData('direction', Math.random() < 0.5 ? -1 : 1);
                         mob.setData('patrolDistance', finalPatrolDist);
                         mob.setData('startX', mobX);
+
+                        // Projectile shooting - random interval between 2-4 seconds
+                        const shootInterval = 2000 + Math.random() * 2000;
+                        mob.setData('shootTimer', this.time.addEvent({{
+                            delay: shootInterval,
+                            callback: () => this.shootProjectile(mob),
+                            loop: true
+                        }}));
                         
                         // Create health bar for mob
                         const healthBarBg = this.add.graphics();
@@ -783,7 +859,16 @@ class WebGameExporter:
                         null,
                         this
                     );
-                    
+
+                    // Projectile-Player collision
+                    this.physics.add.overlap(
+                        this.player,
+                        this.projectiles,
+                        this.handleProjectileHit,
+                        null,
+                        this
+                    );
+
                     console.log('Created ' + mobsCreated + ' mobs (attempted ' + attempts + ' placements)');
                 }}
 
@@ -791,10 +876,22 @@ class WebGameExporter:
                 this.cursors = this.input.keyboard.createCursorKeys();
                 this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
                 this.resetKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+                this.restartGameKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
 
                 // Jump tracking
                 this.jumpsRemaining = {config['player']['max_jumps']};
                 this.isGrounded = false;
+
+                // Store base values for difficulty scaling
+                this.baseWalkSpeed = {config['player']['walk_speed']};
+                this.baseJumpVelocity = {config['player']['jump_velocity']};
+                const baseGravity = {config['physics']['gravity']};
+
+                // Apply difficulty scaling
+                this.player.setGravityY(baseGravity * window.gameState.gravityMultiplier);
+                console.log('Applied difficulty - Gravity:', baseGravity * window.gameState.gravityMultiplier,
+                           'Speed multiplier:', window.gameState.speedMultiplier,
+                           'Jump multiplier:', window.gameState.jumpMultiplier);
 
                 // Camera setup - don't follow if background fits in viewport
                 const bgWidth = {config['background']['width']};
@@ -808,35 +905,40 @@ class WebGameExporter:
                 // Spawn position
                 this.spawnX = {config['character']['spawn_x']};
                 this.spawnY = {config['character']['spawn_y']};
-                
+
                 // Initialize status bar
                 this.updateStatusBar();
             }}
 
             collectItem(player, collectible) {{
-                // Prevent collecting the same item multiple times
-                if (collectible.getData('collected')) {{
+                // Don't collect if already won or if collectible is already being collected
+                if (this.hasWon || !collectible.active) {{
                     return;
                 }}
-                
-                // Mark as collected immediately to prevent multiple triggers
-                collectible.setData('collected', true);
-                
+
+                // Mark as inactive immediately to prevent double collection
+                collectible.active = false;
+
+                // Increment count immediately
+                this.collectedCount++;
+
                 // Get sprite index from collectible data
                 const spriteIndex = collectible.getData('spriteIndex');
-                
+
                 // Get metadata for this collectible
                 const metadata = this.collectibleMetadata[spriteIndex];
                 const name = metadata ? metadata.name : 'Collectible';
                 const statusEffect = metadata ? metadata.status_effect : 'Mystery Effect';
                 const description = metadata ? metadata.description : 'You found something!';
-                
+
+                console.log('Collected "' + name + '" (' + statusEffect + ')! Count: ' + this.collectedCount + '/' + this.totalCollectibles);
+
                 // Apply collectible effects
                 this.applyCollectibleEffect(statusEffect);
-                
+
                 // Display notification
                 this.showCollectibleNotification(name, statusEffect, description);
-                
+
                 // Visual feedback - scale up then disappear
                 this.tweens.add({{
                     targets: collectible,
@@ -845,8 +947,13 @@ class WebGameExporter:
                     duration: 200,
                     onComplete: () => {{
                         collectible.destroy();
-                        this.collectedCount++;
-                        console.log('Collected "' + name + '" (' + statusEffect + ')! Total: ' + this.collectedCount);
+
+                        // Check for win condition
+                        if (this.collectedCount >= this.totalCollectibles && this.totalCollectibles > 0 && !this.hasWon) {{
+                            console.log('ALL COLLECTIBLES COLLECTED! Triggering win...');
+                            this.hasWon = true;
+                            this.handleWin();
+                        }}
                     }}
                 }});
             }}
@@ -914,13 +1021,19 @@ class WebGameExporter:
 
             killMob(mob) {{
                 console.log('Mob defeated!');
-                
+
+                // Remove shooting timer
+                const shootTimer = mob.getData('shootTimer');
+                if (shootTimer) {{
+                    shootTimer.remove();
+                }}
+
                 // Destroy health bars
                 const healthBarBg = mob.getData('healthBarBg');
                 const healthBarFill = mob.getData('healthBarFill');
                 if (healthBarBg) healthBarBg.destroy();
                 if (healthBarFill) healthBarFill.destroy();
-                
+
                 // Death animation
                 this.tweens.add({{
                     targets: mob,
@@ -938,13 +1051,102 @@ class WebGameExporter:
                 const health = mob.getData('health');
                 const maxHealth = mob.getData('maxHealth');
                 const healthPercent = health / maxHealth;
-                
                 const healthBarFill = mob.getData('healthBarFill');
                 if (healthBarFill) {{
                     healthBarFill.clear();
                     healthBarFill.fillStyle(0xFF0000, 1);
                     healthBarFill.fillRect(0, 0, 50 * healthPercent, 6);
                 }}
+            }}
+
+            shootProjectile(mob) {{
+                // Don't shoot if mob is dead or player has won
+                if (!mob.active || this.hasWon) return;
+
+                // Calculate direction towards player
+                const directionX = this.player.x - mob.x;
+                const directionY = this.player.y - mob.y;
+                const distance = Math.sqrt(directionX * directionX + directionY * directionY);
+
+                // Only shoot if player is within reasonable range (e.g., 600 pixels)
+                if (distance > 600) return;
+
+                // Normalize direction
+                const normalizedX = directionX / distance;
+                const normalizedY = directionY / distance;
+
+                // Create projectile - a red circle
+                const projectile = this.add.circle(mob.x, mob.y, 8, 0xFF4500);
+                this.physics.add.existing(projectile);
+
+                // Set projectile velocity (speed of 300 pixels/second)
+                const projectileSpeed = 300;
+                projectile.body.setVelocity(
+                    normalizedX * projectileSpeed,
+                    normalizedY * projectileSpeed
+                );
+
+                // Store damage value
+                projectile.setData('damage', 5 + Math.floor(Math.random() * 6)); // 5-10 damage
+
+                // Add to projectiles group
+                this.projectiles.add(projectile);
+
+                // Add glow effect
+                this.tweens.add({{
+                    targets: projectile,
+                    alpha: {{ from: 1, to: 0.5 }},
+                    duration: 300,
+                    yoyo: true,
+                    repeat: -1
+                }});
+
+                // Destroy projectile after 3 seconds if it hasn't hit anything
+                this.time.delayedCall(3000, () => {{
+                    if (projectile && projectile.active) {{
+                        projectile.destroy();
+                    }}
+                }});
+
+                console.log('Mob fired projectile towards player');
+            }}
+
+            handleProjectileHit(player, projectile) {{
+                // Don't process if already won
+                if (this.hasWon) return;
+
+                // Get damage from projectile
+                const damage = projectile.getData('damage') || 5;
+
+                // Apply damage to player
+                this.playerHealth = Math.max(0, this.playerHealth - damage);
+                console.log('Player hit by projectile! Took ' + damage + ' damage. Health: ' + this.playerHealth);
+
+                // Flash effect
+                this.tweens.add({{
+                    targets: player,
+                    alpha: {{ from: 1, to: 0.3 }},
+                    duration: 100,
+                    yoyo: true,
+                    repeat: 2
+                }});
+
+                // Small knockback
+                const knockbackX = projectile.body.velocity.x * 0.5;
+                const knockbackY = projectile.body.velocity.y * 0.5;
+                player.setVelocity(player.body.velocity.x + knockbackX, player.body.velocity.y + knockbackY);
+
+                // Update status bar
+                this.updateStatusBar();
+
+                // Check if player died
+                if (this.playerHealth <= 0) {{
+                    this.showGameNotification('💀 GAME OVER! 💀<br>Press ESC to restart from Level 1', 3000);
+                    this.physics.pause();
+                }}
+
+                // Destroy projectile
+                projectile.destroy();
             }}
 
             applyCollectibleEffect(statusEffect) {{
@@ -988,15 +1190,15 @@ class WebGameExporter:
                 const nameEl = notification.querySelector('.notification-name');
                 const statusEl = notification.querySelector('.notification-status');
                 const descEl = notification.querySelector('.notification-description');
-                
+
                 // Set text
                 nameEl.textContent = name;
                 statusEl.textContent = statusEffect;
                 descEl.textContent = description;
-                
+
                 // Show notification
                 notification.classList.add('show');
-                
+
                 // Hide after 3.5 seconds (slightly longer to read status effect)
                 setTimeout(() => {{
                     notification.classList.remove('show');
@@ -1008,14 +1210,14 @@ class WebGameExporter:
                 const healthPercent = (this.playerHealth / this.playerMaxHealth) * 100;
                 const healthFill = document.getElementById('health-bar-fill');
                 const healthText = document.getElementById('health-bar-text');
-                
+
                 healthFill.style.width = healthPercent + '%';
                 healthText.textContent = this.playerHealth + ' / ' + this.playerMaxHealth;
-                
+
                 // Update dynamic stats
                 const dynamicStatsContainer = document.getElementById('dynamic-stats');
                 let statsHTML = '';
-                
+
                 // Only show stats that are tracked based on collectibles
                 if (this.trackedStats.score) {{
                     statsHTML += `
@@ -1025,7 +1227,7 @@ class WebGameExporter:
                         </div>
                     `;
                 }}
-                
+
                 if (this.trackedStats.gold) {{
                     statsHTML += `
                         <div class="stat-row" style="margin-top: 10px;">
@@ -1034,7 +1236,7 @@ class WebGameExporter:
                         </div>
                     `;
                 }}
-                
+
                 if (this.trackedStats.energy) {{
                     statsHTML += `
                         <div class="stat-row" style="margin-top: 10px;">
@@ -1043,11 +1245,100 @@ class WebGameExporter:
                         </div>
                     `;
                 }}
-                
+
+                // Always show level and collectibles
+                statsHTML += `
+                    <div class="stat-row" style="margin-top: 10px;">
+                        <div class="stat-label">Level</div>
+                        <div class="stat-value">` + window.gameState.level + `</div>
+                    </div>
+                `;
+
+                statsHTML += `
+                    <div class="stat-row" style="margin-top: 10px;">
+                        <div class="stat-label">Collectibles</div>
+                        <div class="stat-value">` + this.collectedCount + ` / ` + this.totalCollectibles + `</div>
+                    </div>
+                `;
+
                 dynamicStatsContainer.innerHTML = statsHTML;
             }}
 
+            showGameNotification(message, duration = 2000) {{
+                // Get notification element
+                const notification = document.getElementById('game-notification');
+
+                // Set HTML (allows for line breaks and emojis)
+                notification.innerHTML = message;
+
+                // Show notification
+                notification.classList.add('show');
+
+                // Hide after duration
+                setTimeout(() => {{
+                    notification.classList.remove('show');
+                }}, duration);
+            }}
+
+            handleWin() {{
+                console.log('=== YOU WIN! ===');
+                console.log('Final score:', this.collectedCount, '/', this.totalCollectibles);
+
+                // Disable player input during win sequence
+                this.cursors.left.enabled = false;
+                this.cursors.right.enabled = false;
+                this.spaceKey.enabled = false;
+                this.player.setVelocityX(0);
+                this.player.setVelocityY(0);
+
+                // IMMEDIATELY disable all physics interactions to prevent any further collections
+                this.physics.pause();
+
+                // Remove collision handlers to prevent any further collectible collection
+                if (this.collectibles && this.collectibles.children && this.collectibles.children.entries) {{
+                    this.collectibles.children.entries.forEach(collectible => {{
+                        collectible.disableBody(true, false);  // Disable physics but keep visible
+                    }});
+                }}
+
+                // Show win notification
+                this.showGameNotification('🎉 YOU WIN! 🎉<br>Level ' + window.gameState.level + ' Complete!<br>Get ready for Level ' + (window.gameState.level + 1) + '...', 4000);
+
+                // Increase difficulty
+                window.gameState.level++;
+                window.gameState.gravityMultiplier += 0.15;  // 15% more gravity each level
+                window.gameState.speedMultiplier -= 0.08;    // 8% slower movement each level
+                window.gameState.jumpMultiplier -= 0.08;      // 8% weaker jumps each level
+
+                // Prevent negative multipliers
+                if (window.gameState.speedMultiplier < 0.4) window.gameState.speedMultiplier = 0.4;
+                if (window.gameState.jumpMultiplier < 0.4) window.gameState.jumpMultiplier = 0.4;
+
+                console.log('New difficulty:', window.gameState);
+
+                // Restart scene after delay
+                this.time.delayedCall(4000, () => {{
+                    console.log('=== RESTARTING SCENE ===');
+                    this.scene.restart();
+                }});
+            }}
+
             update() {{
+                // Skip update logic if player has won (prevents actions during transition)
+                if (this.hasWon) {{
+                    return;
+                }}
+
+                // Fallback win check (in case collectItem callback didn't fire)
+                if (this.totalCollectibles > 0 &&
+                    this.collectedCount > 0 &&
+                    this.collectedCount >= this.totalCollectibles) {{
+                    console.log('WIN DETECTED IN UPDATE LOOP!');
+                    this.hasWon = true;
+                    this.handleWin();
+                    return;
+                }}
+
                 // Check if on ground
                 this.isGrounded = this.player.body.touching.down;
 
@@ -1056,13 +1347,77 @@ class WebGameExporter:
                     this.jumpsRemaining = {config['player']['max_jumps']};
                 }}
 
+                // Auto-respawn if player falls too far below the level (safety mechanism)
+                const levelHeight = {config['background']['height']};
+                const fallThreshold = levelHeight + 100; // 100px below the level (reduced from 200)
+                if (this.player.y > fallThreshold) {{
+                    console.log('Player fell too far - auto-respawning at spawn point');
+
+                    // Lose 25 health
+                    this.playerHealth = Math.max(0, this.playerHealth - 25);
+                    this.updateStatusBar();
+
+                    if (this.playerHealth <= 0) {{
+                        this.showGameNotification('💀 GAME OVER! 💀<br>Press ESC to restart from Level 1', 3000);
+                        this.physics.pause();
+                        return;
+                    }}
+
+                    this.showGameNotification('You fell off! -25 HP<br>Respawning...', 2000);
+                    this.player.setPosition(this.spawnX, this.spawnY);
+                    this.player.setVelocity(0, 0);
+                    this.jumpsRemaining = {config['player']['max_jumps']};
+                }}
+
+                // Additional stuck detection - if player is near bottom with no jumps and falling
+                if (this.player.y > levelHeight - 100 &&
+                    this.jumpsRemaining === 0 &&
+                    !this.isGrounded &&
+                    this.player.body.velocity.y > 0) {{
+                    // Player is stuck near bottom, falling with no jumps - likely stuck
+                    console.log('Player appears stuck near bottom - auto-respawning');
+
+                    // Lose 25 health
+                    this.playerHealth = Math.max(0, this.playerHealth - 25);
+                    this.updateStatusBar();
+
+                    if (this.playerHealth <= 0) {{
+                        this.showGameNotification('💀 GAME OVER! 💀<br>Press ESC to restart from Level 1', 3000);
+                        this.physics.pause();
+                        return;
+                    }}
+
+                    this.showGameNotification('Stuck! -25 HP<br>Respawning...', 1500);
+                    this.player.setPosition(this.spawnX, this.spawnY);
+                    this.player.setVelocity(0, 0);
+                    this.jumpsRemaining = {config['player']['max_jumps']};
+                }}
+
+                // Restart entire game from Level 1 (ESC key)
+                if (Phaser.Input.Keyboard.JustDown(this.restartGameKey)) {{
+                    console.log('Restarting game from Level 1...');
+                    window.gameState = {{
+                        level: 1,
+                        gravityMultiplier: 1.0,
+                        speedMultiplier: 1.0,
+                        jumpMultiplier: 1.0,
+                        gameId: Date.now()
+                    }};
+                    this.scene.restart();
+                    return;
+                }}
+
+                // Apply difficulty scaling to movement
+                const currentWalkSpeed = this.baseWalkSpeed * window.gameState.speedMultiplier;
+                const currentJumpVelocity = this.baseJumpVelocity * window.gameState.jumpMultiplier;
+
                 // Movement
                 if (this.cursors.left.isDown) {{
-                    this.player.setVelocityX(-{config['player']['walk_speed']});
+                    this.player.setVelocityX(-currentWalkSpeed);
                     this.player.setFlipX(true);
                     this.player.play('walk', true);
                 }} else if (this.cursors.right.isDown) {{
-                    this.player.setVelocityX({config['player']['walk_speed']});
+                    this.player.setVelocityX(currentWalkSpeed);
                     this.player.setFlipX(false);
                     this.player.play('walk', true);
                 }} else {{
@@ -1073,7 +1428,7 @@ class WebGameExporter:
                 // Jumping (double jump support)
                 if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {{
                     if (this.jumpsRemaining > 0) {{
-                        this.player.setVelocityY({config['player']['jump_velocity']});
+                        this.player.setVelocityY(currentJumpVelocity);
                         this.jumpsRemaining--;
                     }}
                 }}
@@ -1148,6 +1503,9 @@ class WebGameExporter:
 
                     statsDiv.textContent = `Position: (${{x}}, ${{y}}) | Velocity: (${{vx}}, ${{vy}}) | On Ground: ${{grounded}} | Jumps Used: ${{jumps}}`;
                 }}
+
+                // Update status bar to keep collectibles counter in sync
+                this.updateStatusBar();
             }}
         }}
 
