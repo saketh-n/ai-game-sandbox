@@ -80,46 +80,123 @@ class GameGenerator:
         img_base64 = base64.standard_b64encode(buffer.getvalue()).decode('utf-8')
 
         # Create vision analysis prompt
-        prompt = f"""Analyze this 2D platformer game background image ({width}x{height}px) and identify ONLY the walkable grass platforms where a character can stand.
+        prompt = f"""You are analyzing a 2D platformer game background ({width}x{height}px) to identify WALKABLE PLATFORMS where a player character can stand and move.
 
-IMPORTANT RULES:
-- Only green grass surfaces are walkable
-- Trees are decorative (NOT walkable)
-- Fences are decorative (NOT walkable)
-- Water/sky areas are NOT walkable
-- Only detect solid horizontal platforms
+CRITICAL: Your bounding boxes must be PRECISE. Players will fall through platforms if your coordinates are wrong!
 
-For each walkable grass platform, provide:
-1. A descriptive name
-2. Position (x, y) - top-left corner in pixels
-3. Dimensions (width, height) in pixels
+═══════════════════════════════════════════════════════════
+WHAT IS A WALKABLE PLATFORM?
+═══════════════════════════════════════════════════════════
 
-Also identify:
-- Gaps between platforms (where jumping is required)
-- Best spawn point for the player character (on a safe platform)
+A platform MUST have these characteristics:
+1. **Flat or nearly-flat TOP SURFACE** - The player stands on top
+2. **Solid and continuous** - Not transparent, not broken, spans horizontally
+3. **Visible ground/terrain** - Grass, dirt, stone, wood planks, etc.
+4. **Contrasts with background** - Clearly distinguishable from sky/air
+5. **Wide enough for character** - Minimum 50px width for playability
 
-Return your analysis as a JSON object with this exact structure:
+═══════════════════════════════════════════════════════════
+WHAT TO EXCLUDE (NOT walkable):
+═══════════════════════════════════════════════════════════
+
+❌ **Trees**: Vertical objects with trunks - they SIT ON platforms, not ARE platforms
+❌ **Plants/Vegetation**: Grass tufts, flowers, mushrooms - decorations ON platforms
+❌ **Clouds**: In the sky, ethereal, not solid
+❌ **Water**: Lakes, ponds - typically at bottom, blue/transparent
+❌ **Fences/Barriers**: Vertical obstacles that block movement
+❌ **Collectibles**: Coins, gems, power-ups - small decorative items
+❌ **Sky/Background**: Air, distant mountains, clouds
+
+═══════════════════════════════════════════════════════════
+BOUNDING BOX PRECISION RULES:
+═══════════════════════════════════════════════════════════
+
+For EACH platform you detect:
+
+1. **X (left edge)**: Start where the solid ground BEGINS (left-most walkable pixel)
+2. **Y (top edge)**: The EXACT top surface where character feet would touch
+3. **Width**: Full horizontal extent of continuous walkable surface
+4. **Height**: Depth of the solid platform (usually 20-50px for grass/ground)
+
+CRITICAL ACCURACY TIPS:
+- Look for the EXACT top surface line of platforms
+- Ignore decorations sitting ON TOP of platforms when measuring Y
+- If a tree sits on a platform, the platform Y is at the tree's BASE, not tree top
+- Measure the platform UNDERNEATH decorations, not the decorations themselves
+- Ensure bounding boxes capture ONLY the solid ground layer
+
+═══════════════════════════════════════════════════════════
+SPAWN POINT SELECTION:
+═══════════════════════════════════════════════════════════
+
+Choose a spawn point that is:
+- ON a large, stable platform (not a tiny ledge)
+- Near the left or center of the level
+- ABOVE the platform surface (not inside it!)
+  → If platform top is at Y=740, spawn should be Y=700 (40px above)
+- Not near level edges or dangerous gaps
+
+═══════════════════════════════════════════════════════════
+GAP IDENTIFICATION:
+═══════════════════════════════════════════════════════════
+
+Identify horizontal gaps where:
+- There is empty space between two platforms
+- Player must JUMP to cross
+- Gap is significant (> 30px wide)
+
+For each gap, provide:
+- Description (e.g., "Gap between left ground and first floating platform")
+- From/to platform names
+- Approximate width in pixels
+- X, Y, width, height for visual representation
+
+═══════════════════════════════════════════════════════════
+OUTPUT FORMAT:
+═══════════════════════════════════════════════════════════
+
+Return ONLY valid JSON (no markdown, no explanation):
+
 {{
   "platforms": [
-    {{"name": "Platform Name", "x": 0, "y": 740, "width": 1024, "height": 28, "walkable": true}},
-    ...
+    {{
+      "name": "Descriptive name (e.g., 'Bottom Ground Platform', 'Upper Left Ledge')",
+      "x": 0,
+      "y": 740,
+      "width": 1024,
+      "height": 28,
+      "walkable": true
+    }}
   ],
   "gaps": [
-    {{"description": "Gap description", "from_platform": "Platform A", "to_platform": "Platform B", "width": 50}},
-    ...
+    {{
+      "description": "Gap between platforms",
+      "from_platform": "Platform A name",
+      "to_platform": "Platform B name",
+      "width": 80,
+      "x": 400,
+      "y": 700,
+      "height": 20
+    }}
   ],
-  "spawn": {{"x": 512, "y": 640}},
-  "notes": ["Tree decorations have no collision", ...]
+  "spawn": {{
+    "x": 100,
+    "y": 700
+  }},
+  "notes": [
+    "Important observations about the level layout",
+    "Any ambiguities or challenges in detection"
+  ]
 }}
 
-Only return the JSON, no other text."""
+Now analyze the image and return ONLY the JSON with precise platform coordinates."""
 
         # Call Claude Vision API
         print(f"  Calling Claude Sonnet 4.5 for analysis...")
 
         response = self.anthropic_client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=4096,
+            max_tokens=8192,
             messages=[
                 {
                     "role": "user",
@@ -163,11 +240,21 @@ Only return the JSON, no other text."""
         print(f"  ✓ Identified {len(analysis_data['gaps'])} gaps requiring jumps")
         print(f"  ✓ Spawn point: ({analysis_data['spawn']['x']}, {analysis_data['spawn']['y']})")
 
-        # Step 2: Verify detections with overlay feedback
-        print(f"\n🔍 Verifying platform detections...")
-        verified_analysis = self.verify_platform_detections(background_path, analysis_data)
+        # Validate and fix spawn point to ensure it's on a platform
+        analysis_data = self._validate_spawn_point(analysis_data)
 
-        return verified_analysis
+        # NOTE: Verification with overlay has been disabled as it adds visual noise
+        # and makes detection WORSE, not better. The improved initial prompt above
+        # should provide accurate results on the first pass.
+        #
+        # If you need verification, consider using Claude's thinking mode instead:
+        # response = client.messages.create(
+        #     model="claude-sonnet-4-5",
+        #     thinking={"type": "enabled", "budget_tokens": 5000},
+        #     ...
+        # )
+
+        return analysis_data
 
     def verify_platform_detections(
         self,
@@ -348,6 +435,73 @@ Only return the JSON, no other text."""
                 print(f"    - {correction}")
 
         return verified_data
+
+    def _validate_spawn_point(self, analysis_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate that the spawn point is on a platform and adjust if necessary.
+
+        Ensures players always start on solid ground, not in mid-air.
+
+        Args:
+            analysis_data: Platform analysis data with spawn point
+
+        Returns:
+            Updated analysis data with validated spawn point
+        """
+        platforms = analysis_data['platforms']
+        spawn_x = analysis_data['spawn']['x']
+        spawn_y = analysis_data['spawn']['y']
+
+        if not platforms:
+            print(f"  ⚠️  WARNING: No platforms detected! Using original spawn point.")
+            return analysis_data
+
+        # Check if spawn point is on a platform
+        def is_on_platform(x, y, platform, tolerance=50):
+            """Check if point (x, y) is on the platform surface"""
+            # X must be within platform horizontal bounds
+            on_platform_x = platform['x'] <= x <= platform['x'] + platform['width']
+
+            # Y should be ABOVE the platform (character stands on top)
+            # Allow some tolerance (player should spawn 40-100px above platform top)
+            on_platform_y = (platform['y'] - 100) <= y <= platform['y']
+
+            return on_platform_x and on_platform_y
+
+        # Find which platform the spawn point is on
+        spawn_platform = None
+        for platform in platforms:
+            if is_on_platform(spawn_x, spawn_y, platform):
+                spawn_platform = platform
+                break
+
+        if spawn_platform:
+            print(f"  ✓ Spawn point validated: on '{spawn_platform['name']}'")
+            return analysis_data
+
+        # Spawn point is NOT on a platform - need to fix it!
+        print(f"  ⚠️  WARNING: Spawn point ({spawn_x}, {spawn_y}) is NOT on any platform!")
+
+        # Find the largest, most stable platform (prefer bottom platforms)
+        # Sort by: 1) Y position (bottom first), 2) Width (larger first)
+        sorted_platforms = sorted(
+            platforms,
+            key=lambda p: (-p['y'], -p['width'])  # Negative for descending order
+        )
+
+        best_platform = sorted_platforms[0]
+
+        # Place spawn point in the center-left of the best platform, above the surface
+        new_spawn_x = best_platform['x'] + best_platform['width'] // 3
+        new_spawn_y = best_platform['y'] - 60  # 60px above platform top
+
+        print(f"  ✓ Corrected spawn point: ({spawn_x}, {spawn_y}) → ({new_spawn_x}, {new_spawn_y})")
+        print(f"    Now on platform: '{best_platform['name']}'")
+
+        analysis_data['spawn']['x'] = new_spawn_x
+        analysis_data['spawn']['y'] = new_spawn_y
+
+        return analysis_data
 
     def process_character_sprite(
         self,

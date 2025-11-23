@@ -284,14 +284,18 @@ class WebGameExporter:
                 const platformData = {platforms_json};
 
                 platformData.forEach(platform => {{
+                    // Create rectangle at top-left position (not center)
+                    // Claude Vision returns top-left coordinates, so we set origin to (0, 0)
                     const rect = this.add.rectangle(
-                        platform.x + platform.width / 2,
-                        platform.y + platform.height / 2,
+                        platform.x,
+                        platform.y,
                         platform.width,
                         platform.height,
                         0x00ff00,
                         0.0  // Invisible platforms (set to 0.3 to see them)
                     );
+                    // Set origin to top-left to match Claude's coordinate system
+                    rect.setOrigin(0, 0);
                     this.physics.add.existing(rect, true);
                     this.platforms.add(rect);
                 }});
