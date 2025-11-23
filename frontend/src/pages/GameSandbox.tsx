@@ -15,11 +15,19 @@ const GameSandbox = () => {
   } | null>(null)
   const [debugFrames, setDebugFrames] = useState<string[]>([])
   const [debugPlatforms, setDebugPlatforms] = useState<string>('')
+  const [debugCollectibles, setDebugCollectibles] = useState<Array<{
+    sprite: string
+    name: string
+    status_effect: string
+    description: string
+  }>>([])
   const [showDebugFrames, setShowDebugFrames] = useState(false)
   const [showDebugPlatforms, setShowDebugPlatforms] = useState(false)
+  const [showDebugCollectibles, setShowDebugCollectibles] = useState(false)
   const [debugOptions, setDebugOptions] = useState({
     show_sprite_frames: true,
     show_platforms: false,
+    show_collectibles: true,
   })
 
   useEffect(() => {
@@ -67,6 +75,7 @@ const GameSandbox = () => {
       })
       setDebugFrames(data.debug_frames || [])
       setDebugPlatforms(data.debug_platforms || '')
+      setDebugCollectibles(data.debug_collectibles || [])
     } catch (err) {
       console.error('Error generating game:', err)
       setError(err instanceof Error ? err.message : 'Failed to generate game')
@@ -248,6 +257,15 @@ const GameSandbox = () => {
                     className="w-4 h-4 rounded border-white/30 bg-white/10 text-green-500 focus:ring-green-500 focus:ring-offset-0"
                   />
                   <span className="text-purple-200 group-hover:text-white transition-colors">Show Platform Map</span>
+                </label>
+                <label className="flex items-center space-x-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={debugOptions.show_collectibles}
+                    onChange={(e) => setDebugOptions({...debugOptions, show_collectibles: e.target.checked})}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10 text-green-500 focus:ring-green-500 focus:ring-offset-0"
+                  />
+                  <span className="text-purple-200 group-hover:text-white transition-colors">Show Collectibles</span>
                 </label>
                 <button
                   onClick={handleRegenerate}
@@ -432,6 +450,80 @@ const GameSandbox = () => {
                           />
                         </div>
                         <div className="absolute -top-2 -right-2 bg-yellow-400 text-black text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+                          {index}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Debug: Collectible Sprites */}
+          {debugCollectibles.length > 0 && !loading && (
+            <div className="mt-6 bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 overflow-hidden">
+              <button
+                onClick={() => setShowDebugCollectibles(!showDebugCollectibles)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  <svg
+                    className="w-5 h-5 text-amber-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                    />
+                  </svg>
+                  <span className="text-white font-semibold">Debug: Extracted Collectible Sprites ({debugCollectibles.length})</span>
+                </div>
+                <svg
+                  className={`w-5 h-5 text-white transition-transform ${showDebugCollectibles ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {showDebugCollectibles && (
+                <div className="p-6 border-t border-white/10">
+                  <p className="text-purple-200 text-sm mb-4">
+                    These are the individual collectible items extracted from the collectible sprite sheet.
+                    Each item shows its sprite, name, status effect, and description as analyzed by Claude AI.
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {debugCollectibles.map((collectible, index) => (
+                      <div key={index} className="relative group">
+                        <div className="bg-gradient-to-br from-white/10 to-white/5 rounded-lg p-4 border border-white/20 hover:border-amber-400 transition-all hover:scale-105">
+                          <div className="bg-black/30 rounded-lg p-3 mb-3 flex items-center justify-center" style={{ minHeight: '100px' }}>
+                            <img
+                              src={collectible.sprite}
+                              alt={collectible.name}
+                              className="max-w-full max-h-24 object-contain"
+                              style={{ imageRendering: 'pixelated' }}
+                            />
+                          </div>
+                          <div className="text-center">
+                            <h4 className="text-white font-semibold text-sm mb-1 truncate" title={collectible.name}>
+                              {collectible.name}
+                            </h4>
+                            <div className="bg-amber-500/20 text-amber-300 text-xs px-2 py-1 rounded-full mb-2 border border-amber-500/30">
+                              {collectible.status_effect}
+                            </div>
+                            <p className="text-purple-200 text-xs line-clamp-2" title={collectible.description}>
+                              {collectible.description}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="absolute -top-2 -right-2 bg-amber-400 text-black text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-lg">
                           {index}
                         </div>
                       </div>

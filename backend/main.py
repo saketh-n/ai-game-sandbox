@@ -113,6 +113,7 @@ class GenerateGameResponse(BaseModel):
     spawn_point: dict = Field(..., description="Character spawn coordinates")
     debug_frames: List[str] = Field(default=[], description="Base64 encoded debug frames for visualization")
     debug_platforms: str = Field(default="", description="Base64 encoded platform visualization")
+    debug_collectibles: List[dict] = Field(default=[], description="Extracted collectible sprites with metadata for visualization")
 
 image_generator = ImageGenerator(api_key=os.getenv("FAL_KEY"))
 
@@ -156,7 +157,18 @@ Looking at the image from LEFT TO RIGHT, identify each collectible item and prov
    - Make it evocative and game-appropriate
    
 2. **Status Effect**: A relevant gameplay effect this collectible provides
-   - Examples: "+10 Points", "Restores Health", "Speed Boost", "Double Jump", "Shield", "Extra Life"
+   **PRIORITY EFFECTS** (use these whenever possible based on item appearance):
+   - **Currency items** (coins, gems, treasures, gold objects): "Gold +25", "Gold +50", "Gold +100"
+   - **Score items** (stars, trophies, diamonds, special collectibles): "Score +10", "Score +25", "Score +50"
+   - **Food/Health items** (fruits, potions, hearts, medical items, food): "Restores 25 HP", "Restores 50 HP", "Full Health"
+   
+   Other effects (use sparingly for unique items):
+   - "Energy +25", "Speed Boost", "Double Jump", "Shield", "Extra Life"
+   
+   **GUIDELINES:**
+   - Health (HP) maxes out at 100, so restoration amounts should be 25, 50, or "Full Health"
+   - Match the effect value to the item's rarity/appearance (shinier/bigger = higher value)
+   - Most items should give Gold, Score, or Health - these are the core gameplay mechanics
    - Be creative but clear about what it does
    
 3. **Description**: A brief, exciting flavor text (1 sentence)
@@ -179,18 +191,38 @@ EXAMPLES:
   "collectibles": [
     {
       "name": "Golden Victory Coin",
-      "status_effect": "+10 Points",
-      "description": "A shimmering gold coin that adds to your score!"
+      "status_effect": "Gold +25",
+      "description": "A shimmering gold coin worth a small fortune!"
+    },
+    {
+      "name": "Ancient Treasure Gem",
+      "status_effect": "Gold +100",
+      "description": "A rare gemstone that glimmers with untold riches!"
+    },
+    {
+      "name": "Ruby Score Star",
+      "status_effect": "Score +50",
+      "description": "A brilliant red star that boosts your score!"
     },
     {
       "name": "Crimson Health Potion",
       "status_effect": "Restores 50 HP",
-      "description": "A bubbling red elixir that heals your wounds instantly."
+      "description": "A bubbling red elixir that heals your wounds!"
     },
     {
-      "name": "Lightning Speed Star",
-      "status_effect": "Speed Boost",
-      "description": "A sparkling star that makes you run twice as fast!"
+      "name": "Fresh Apple",
+      "status_effect": "Restores 25 HP",
+      "description": "A crisp, juicy apple that restores your vitality!"
+    },
+    {
+      "name": "Bronze Trophy Coin",
+      "status_effect": "Score +10",
+      "description": "A small trophy coin marking your achievement!"
+    },
+    {
+      "name": "Mysterious Power Orb",
+      "status_effect": "Energy +25",
+      "description": "A glowing orb that surges with mystical energy!"
     }
   ]
 }
@@ -199,7 +231,8 @@ IMPORTANT:
 - List items in LEFT-TO-RIGHT order as they appear in the sprite sheet
 - Include ALL items you can see in the image
 - Name should be descriptive and thematic (not generic like "Coin 1")
-- Status effect should be a clear gameplay mechanic
+- Status effect should be a clear gameplay mechanic - PRIORITIZE Gold, Score, and Health effects
+- Match the effect to the item's visual appearance (gold items = Gold, stars/trophies = Score, food/potions = Health)
 - Description should be one engaging sentence"""
 
     try:
@@ -284,23 +317,19 @@ def segment_collectible_sprites(collectible_path: Path, sprite_analyzer, expecte
     
     logger.info(f"Segmenting collectible sprites from: {collectible_path}")
     
-    # STEP 1: Analyze sprite sheet layout using Claude Vision (or use provided count)
-    if expected_count:
-        logger.info(f"  Using provided expected count: {expected_count} collectibles")
-        # Create a simplified layout_info based on expected count
-        layout_info = {
-            'layout_type': 'horizontal',
-            'rows': 1,
-            'columns': expected_count,
-            'total_frames': expected_count,
-            'frame_width': 128,  # Will be recalculated during extraction
-            'frame_height': 128
-        }
-    else:
-        logger.info("  Analyzing collectible layout with Claude Vision...")
-        layout_info = sprite_analyzer.analyze_sprite_sheet_layout(collectible_path)
-        logger.info(f"  Layout: {layout_info['layout_type']} ({layout_info['rows']}×{layout_info['columns']})")
-        logger.info(f"  Total collectibles: {layout_info['total_frames']}")
+    # STEP 1: Always analyze sprite sheet layout using Claude Vision
+    # (Don't assume horizontal layout even if we have expected_count - grids are common!)
+    logger.info("  Analyzing collectible layout with Claude Vision...")
+    layout_info = sprite_analyzer.analyze_sprite_sheet_layout(collectible_path)
+    logger.info(f"  Layout: {layout_info['layout_type']} ({layout_info['rows']}×{layout_info['columns']})")
+    logger.info(f"  Total collectibles detected: {layout_info['total_frames']}")
+    
+    # Validate against expected count if provided
+    if expected_count and layout_info['total_frames'] != expected_count:
+        logger.warning(
+            f"  Layout detection found {layout_info['total_frames']} items, "
+            f"but metadata analysis found {expected_count} items. Using detected layout."
+        )
     
     # STEP 2: Remove background (assume white background)
     logger.info("  Removing background from collectible sheet...")
@@ -542,7 +571,7 @@ async def generate_asset_prompts(request: PromptRequest):
         {{
         "theme": "A concise theme description (e.g., 'space adventure', 'medieval fantasy', 'cyberpunk city')",
         "main_character": {{
-            "prompt": "2D sprite sheet of [CHARACTER] wearing [OUTFIT/GEAR], pixel art style for platformer game. Eight frames of walking animation cycle displayed side by side from left to right. Frame 1: neutral standing pose. Frame 2: left front leg lifting. Frame 3: left front leg fully lifted mid-step. Frame 4: left front leg descending, right front leg preparing. Frame 5: both front legs planted transition. Frame 6: right front leg lifting. Frame 7: right front leg fully lifted mid-step. Frame 8: right front leg descending, completing full walk cycle. Consistent character design across all frames with clear distinct poses. Clean white background, retro game sprite aesthetic, sharp pixel details, [COLOR AND VISUAL DETAILS]",
+            "prompt": "2D sprite sheet of [CHARACTER] wearing [OUTFIT/GEAR], pixel art style for platformer game. Eight frames of walking animation cycle displayed side by side from left to right. Each frame should be facing to the right. Frame 1: neutral standing pose. Frame 2: left front leg lifting. Frame 3: left front leg fully lifted mid-step. Frame 4: left front leg descending, right front leg preparing. Frame 5: both front legs planted transition. Frame 6: right front leg lifting. Frame 7: right front leg fully lifted mid-step. Frame 8: right front leg descending, completing full walk cycle. Consistent character design across all frames with clear distinct poses. Clean white background, retro game sprite aesthetic, sharp pixel details, [COLOR AND VISUAL DETAILS]",
             "style": "pixel art sprite sheet, 2D platformer game graphics, retro gaming aesthetic",
             "additional_instructions": "Ensure perfect consistency in character design across all eight frames. Each frame should show clear progression of complete walking cycle with distinct leg positions. Frames arranged horizontally in sequence. Clean separation between frames. Wide horizontal composition to fit all 8 frames."
         }}
@@ -1034,6 +1063,22 @@ async def generate_game(request: GenerateGameRequest):
             logger.success(f"[{request_id}] Game generated successfully!")
             logger.info(f"[{request_id}] Platforms: {platforms_detected}, Gaps: {gaps_detected}")
 
+            # Prepare debug collectibles data (combine sprites with metadata)
+            debug_collectibles_data = []
+            if collectible_sprites and collectible_metadata:
+                for i, sprite_data_url in enumerate(collectible_sprites):
+                    metadata = collectible_metadata[i] if i < len(collectible_metadata) else {
+                        "name": f"Mystery Item {i + 1}",
+                        "status_effect": "Unknown Effect",
+                        "description": "A mysterious collectible item!"
+                    }
+                    debug_collectibles_data.append({
+                        "sprite": sprite_data_url,
+                        "name": metadata.get("name", "Unknown"),
+                        "status_effect": metadata.get("status_effect", "Unknown Effect"),
+                        "description": metadata.get("description", "")
+                    })
+            
             return GenerateGameResponse(
                 game_html=game_html,
                 scene_config=scene_config,
@@ -1041,7 +1086,8 @@ async def generate_game(request: GenerateGameRequest):
                 gaps_detected=gaps_detected,
                 spawn_point=spawn_point,
                 debug_frames=debug_frames if request.debug_options.get("show_sprite_frames", True) else [],
-                debug_platforms=debug_platforms
+                debug_platforms=debug_platforms,
+                debug_collectibles=debug_collectibles_data if request.debug_options.get("show_collectibles", True) else []
             )
 
         except httpx.HTTPStatusError as e:
@@ -1081,4 +1127,5 @@ async def generate_game(request: GenerateGameRequest):
 if __name__ == "__main__":
     import uvicorn
     logger.info("Starting AI Asset Generator API on http://0.0.0.0:8000")
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

@@ -230,6 +230,74 @@ class WebGameExporter:
             font-style: italic;
         }}
 
+        #status-bar {{
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            padding: 15px 20px;
+            min-width: 250px;
+            font-family: 'Courier New', monospace;
+            z-index: 999;
+            backdrop-filter: blur(10px);
+        }}
+
+        .stat-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }}
+
+        .stat-row:last-child {{
+            margin-bottom: 0;
+        }}
+
+        .stat-label {{
+            color: #FFF;
+            font-weight: bold;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }}
+
+        .stat-value {{
+            color: #FFD700;
+            font-weight: bold;
+            font-size: 1rem;
+        }}
+
+        .health-bar-container {{
+            width: 100%;
+            height: 20px;
+            background: rgba(255, 0, 0, 0.2);
+            border: 2px solid #8B0000;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 5px;
+            position: relative;
+        }}
+
+        .health-bar-fill {{
+            height: 100%;
+            background: linear-gradient(90deg, #FF0000 0%, #FF6B6B 100%);
+            transition: width 0.3s ease;
+            border-radius: 8px;
+        }}
+
+        .health-bar-text {{
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 0.75rem;
+            font-weight: bold;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+        }}
+
         .loading {{
             position: absolute;
             top: 50%;
@@ -247,6 +315,16 @@ class WebGameExporter:
         <div class="notification-name"></div>
         <div class="notification-status"></div>
         <div class="notification-description"></div>
+    </div>
+    <div id="status-bar" style="display:none;">
+        <div class="stat-row">
+            <div class="stat-label">Health</div>
+        </div>
+        <div class="health-bar-container">
+            <div class="health-bar-fill" id="health-bar-fill"></div>
+            <div class="health-bar-text" id="health-bar-text">100 / 100</div>
+        </div>
+        <div id="dynamic-stats"></div>
     </div>
     <div id="game-container" style="display:none;"></div>
 
@@ -323,6 +401,10 @@ class WebGameExporter:
                 this.collectibleSprites = collectibleSprites;
                 this.collectibleMetadata = collectibleMetadata;
                 
+                // Analyze metadata to determine what stats to track
+                this.trackedStats = this.analyzeCollectibleStats(collectibleMetadata);
+                console.log('Tracked stats:', this.trackedStats);
+                
                 if (collectibleSprites.length > 0) {{
                     console.log('Loading ' + collectibleSprites.length + ' collectible sprites...');
                     console.log('Collectible metadata:', collectibleMetadata);
@@ -347,10 +429,45 @@ class WebGameExporter:
                     document.getElementById('game-container').style.display = 'block';
                     document.getElementById('controls').style.display = 'block';
                     document.getElementById('footer').style.display = 'block';
+                    document.getElementById('status-bar').style.display = 'block';
                 }});
             }}
 
+            analyzeCollectibleStats(metadata) {{
+                // Parse collectible metadata to find what stats to track
+                const stats = {{}};
+                
+                metadata.forEach(item => {{
+                    const effect = item.status_effect || '';
+                    const effectLower = effect.toLowerCase();
+                    
+                    // Look for score/points patterns
+                    if (effectLower.includes('score') || effectLower.includes('point')) {{
+                        stats.score = true;
+                    }}
+                    // Look for gold/coins patterns
+                    if (effectLower.includes('gold') || effectLower.includes('coin')) {{
+                        stats.gold = true;
+                    }}
+                    // Look for energy patterns
+                    if (effectLower.includes('energy')) {{
+                        stats.energy = true;
+                    }}
+                }});
+                
+                return stats;
+            }}
+
             create() {{
+                // Initialize player stats
+                this.playerHealth = 100;
+                this.playerMaxHealth = 100;
+                this.playerStats = {{
+                    score: 0,
+                    gold: 0,
+                    energy: 0
+                }};
+                
                 // Add background
                 this.bg = this.add.image(0, 0, 'background').setOrigin(0, 0);
 
@@ -538,9 +655,20 @@ class WebGameExporter:
                 // Spawn position
                 this.spawnX = {config['character']['spawn_x']};
                 this.spawnY = {config['character']['spawn_y']};
+                
+                // Initialize status bar
+                this.updateStatusBar();
             }}
 
             collectItem(player, collectible) {{
+                // Prevent collecting the same item multiple times
+                if (collectible.getData('collected')) {{
+                    return;
+                }}
+                
+                // Mark as collected immediately to prevent multiple triggers
+                collectible.setData('collected', true);
+                
                 // Get sprite index from collectible data
                 const spriteIndex = collectible.getData('spriteIndex');
                 
@@ -549,6 +677,9 @@ class WebGameExporter:
                 const name = metadata ? metadata.name : 'Collectible';
                 const statusEffect = metadata ? metadata.status_effect : 'Mystery Effect';
                 const description = metadata ? metadata.description : 'You found something!';
+                
+                // Apply collectible effects
+                this.applyCollectibleEffect(statusEffect);
                 
                 // Display notification
                 this.showCollectibleNotification(name, statusEffect, description);
@@ -565,6 +696,41 @@ class WebGameExporter:
                         console.log('Collected "' + name + '" (' + statusEffect + ')! Total: ' + this.collectedCount);
                     }}
                 }});
+            }}
+
+            applyCollectibleEffect(statusEffect) {{
+                const effectLower = statusEffect.toLowerCase();
+                
+                // Parse numeric values from effect string
+                const numberMatch = statusEffect.match(/[+]?(\d+)/);
+                const value = numberMatch ? parseInt(numberMatch[1]) : 0;
+                
+                // Health restoration (HP maxes at 100)
+                if (effectLower.includes('restore') && (effectLower.includes('hp') || effectLower.includes('health'))) {{
+                    this.playerHealth = Math.min(this.playerMaxHealth, this.playerHealth + value);
+                    console.log('Health restored by ' + value + '. Current: ' + this.playerHealth);
+                }} else if (effectLower.includes('full health')) {{
+                    this.playerHealth = this.playerMaxHealth;
+                    console.log('Health fully restored to ' + this.playerMaxHealth);
+                }}
+                // Score/Points
+                else if (effectLower.includes('score') || effectLower.includes('point')) {{
+                    this.playerStats.score += value || 10;
+                    console.log('Score increased by ' + (value || 10) + '. Total: ' + this.playerStats.score);
+                }}
+                // Gold/Coins
+                else if (effectLower.includes('gold') || effectLower.includes('coin')) {{
+                    this.playerStats.gold += value || 1;
+                    console.log('Gold increased by ' + (value || 1) + '. Total: ' + this.playerStats.gold);
+                }}
+                // Energy
+                else if (effectLower.includes('energy')) {{
+                    this.playerStats.energy += value || 25;
+                    console.log('Energy increased by ' + (value || 25) + '. Total: ' + this.playerStats.energy);
+                }}
+                
+                // Update status bar
+                this.updateStatusBar();
             }}
 
             showCollectibleNotification(name, statusEffect, description) {{
@@ -586,6 +752,50 @@ class WebGameExporter:
                 setTimeout(() => {{
                     notification.classList.remove('show');
                 }}, 3500);
+            }}
+
+            updateStatusBar() {{
+                // Update health bar
+                const healthPercent = (this.playerHealth / this.playerMaxHealth) * 100;
+                const healthFill = document.getElementById('health-bar-fill');
+                const healthText = document.getElementById('health-bar-text');
+                
+                healthFill.style.width = healthPercent + '%';
+                healthText.textContent = this.playerHealth + ' / ' + this.playerMaxHealth;
+                
+                // Update dynamic stats
+                const dynamicStatsContainer = document.getElementById('dynamic-stats');
+                let statsHTML = '';
+                
+                // Only show stats that are tracked based on collectibles
+                if (this.trackedStats.score) {{
+                    statsHTML += `
+                        <div class="stat-row" style="margin-top: 10px;">
+                            <div class="stat-label">Score</div>
+                            <div class="stat-value">` + this.playerStats.score + `</div>
+                        </div>
+                    `;
+                }}
+                
+                if (this.trackedStats.gold) {{
+                    statsHTML += `
+                        <div class="stat-row" style="margin-top: 10px;">
+                            <div class="stat-label">Gold</div>
+                            <div class="stat-value">` + this.playerStats.gold + `</div>
+                        </div>
+                    `;
+                }}
+                
+                if (this.trackedStats.energy) {{
+                    statsHTML += `
+                        <div class="stat-row" style="margin-top: 10px;">
+                            <div class="stat-label">Energy</div>
+                            <div class="stat-value">` + this.playerStats.energy + `</div>
+                        </div>
+                    `;
+                }}
+                
+                dynamicStatsContainer.innerHTML = statsHTML;
             }}
 
             update() {{
