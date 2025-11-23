@@ -23,6 +23,10 @@ export interface AssetData {
     description?: string
     variations: MainCharacterVariation[]
   }
+  mob?: {
+    description?: string
+    variations: MainCharacterVariation[]
+  }
   background?: {
     description?: string
     variations: BackgroundVariation[]
@@ -45,6 +49,7 @@ export interface SelectedPrompt {
 
 export interface GeneratedAssetImages {
   mainCharacter?: string
+  mob?: string
   background?: string
   collectible?: string
 }

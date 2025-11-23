@@ -1317,7 +1317,9 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
         player_config: Optional[Dict[str, Any]] = None,
         collectible_sprites: list = None,
         collectible_positions: list = None,
-        collectible_metadata: list = None
+        collectible_metadata: list = None,
+        mob_sprite_path: str = None,
+        mob_sprite_url: str = None
     ) -> tuple[str, Dict[str, Any], list[str]]:
         """
         Generate game HTML using original image URLs (for Phaser compatibility)
@@ -1333,6 +1335,11 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
             num_frames: Number of animation frames
             game_name: Name for the generated game
             player_config: Optional player physics configuration
+            collectible_sprites: List of collectible sprite data URLs
+            collectible_positions: List of collectible positions
+            collectible_metadata: List of collectible metadata
+            mob_sprite_path: Local path to downloaded mob sprite
+            mob_sprite_url: Original URL to mob sprite
 
         Returns:
             Tuple of (game_html_string, scene_config_dict, debug_frames_base64_list)
@@ -1370,6 +1377,21 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
         processed_sprite_data_url = f"data:image/png;base64,{sprite_base64}"
         print(f"  ✓ Processed sprite encoded ({len(sprite_base64)} bytes)")
 
+        # Process mob sprite if provided
+        processed_mob_data_url = None
+        mob_config = None
+        if mob_sprite_path and mob_sprite_url:
+            print(f"\n👾 Processing mob sprite...")
+            mob_path = Path(mob_sprite_path)
+            processed_mob_path, mob_config = self.process_character_sprite(
+                mob_path,
+                num_frames=num_frames
+            )
+            with open(processed_mob_path, 'rb') as f:
+                mob_base64 = base64.b64encode(f.read()).decode('utf-8')
+            processed_mob_data_url = f"data:image/png;base64,{mob_base64}"
+            print(f"  ✓ Mob sprite processed ({len(mob_base64)} bytes)")
+
         # Create scene configuration
         scene_config = {
             "name": game_name,
@@ -1400,8 +1422,17 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
             "player": player_config,
             "analysis": platform_analysis
         }
+        
+        # Add mob configuration if mob was processed
+        if mob_config and processed_mob_data_url:
+            scene_config["mob"] = {
+                "sprite_path": processed_mob_data_url,
+                "frame_width": mob_config["frame_width"],
+                "frame_height": mob_config["frame_height"],
+                "num_frames": mob_config["num_frames"]
+            }
 
-        # Generate HTML with URLs (background URL + sprite data URI + collectibles)
+        # Generate HTML with URLs (background URL + sprite data URI + collectibles + mob)
         print(f"\n🔨 Generating HTML with URL references...")
         game_html = self.web_exporter._generate_html(
             scene_config,
@@ -1409,7 +1440,9 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
             processed_sprite_data_url,  # Pass data URL for processed sprite
             collectible_sprites,  # Pass collectible sprite data URLs
             collectible_positions,  # Pass collectible positions
-            collectible_metadata  # Pass collectible metadata
+            collectible_metadata,  # Pass collectible metadata
+            processed_mob_data_url,  # Pass mob sprite data URL
+            mob_config  # Pass mob sprite configuration
         )
 
         print(f"  ✓ Game HTML generated: {len(game_html)} characters")

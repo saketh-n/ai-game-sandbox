@@ -15,6 +15,7 @@ import httpx
 from pathlib import Path
 from cache_manager import cache
 from image_cache_manager import image_cache
+from game_cache_manager import game_cache
 
 from image_generation.generator import ImageGenerator
 from image_generation.config import ImageGenerationConfig
@@ -100,6 +101,7 @@ class GenerateImageResponse(BaseModel):
 class GenerateGameRequest(BaseModel):
     background_url: str = Field(..., description="URL to background image")
     character_url: str = Field(..., description="URL to character sprite sheet")
+    mob_url: Optional[str] = Field(None, description="URL to mob/enemy sprite sheet")
     collectible_url: Optional[str] = Field(None, description="URL to collectible sprite sheet")
     num_frames: int = Field(default=8, description="Number of animation frames in sprite sheet")
     game_name: str = Field(default="GeneratedGame", description="Name for the generated game")
@@ -574,16 +576,23 @@ async def generate_asset_prompts(request: PromptRequest):
             "prompt": "2D sprite sheet of [CHARACTER] wearing [OUTFIT/GEAR], pixel art style for platformer game. Eight frames of walking animation cycle displayed side by side from left to right. Each frame should be facing to the right. Frame 1: neutral standing pose. Frame 2: left front leg lifting. Frame 3: left front leg fully lifted mid-step. Frame 4: left front leg descending, right front leg preparing. Frame 5: both front legs planted transition. Frame 6: right front leg lifting. Frame 7: right front leg fully lifted mid-step. Frame 8: right front leg descending, completing full walk cycle. Consistent character design across all frames with clear distinct poses. Clean white background, retro game sprite aesthetic, sharp pixel details, [COLOR AND VISUAL DETAILS]",
             "style": "pixel art sprite sheet, 2D platformer game graphics, retro gaming aesthetic",
             "additional_instructions": "Ensure perfect consistency in character design across all eight frames. Each frame should show clear progression of complete walking cycle with distinct leg positions. Frames arranged horizontally in sequence. Clean separation between frames. Wide horizontal composition to fit all 8 frames."
+        }},
+        "mob": {{
+            "prompt": "2D sprite sheet of [ENEMY/MOB CHARACTER], pixel art style for platformer game enemy. Eight frames of walking animation cycle displayed side by side from left to right. Each frame should be facing to the LEFT (opposite direction from hero). Frame 1: neutral standing pose. Frame 2: left front leg lifting. Frame 3: left front leg fully lifted mid-step. Frame 4: left front leg descending, right front leg preparing. Frame 5: both front legs planted transition. Frame 6: right front leg lifting. Frame 7: right front leg fully lifted mid-step. Frame 8: right front leg descending, completing full walk cycle. Enemy should look hostile or antagonistic. Consistent character design across all frames with clear distinct poses. Clean white background, retro game sprite aesthetic, sharp pixel details, [COLOR AND VISUAL DETAILS CONTRASTING WITH HERO]",
+            "style": "pixel art sprite sheet, 2D platformer game graphics, retro gaming aesthetic, enemy/hostile character",
+            "additional_instructions": "Ensure perfect consistency in enemy design across all eight frames. Enemy should face LEFT (opposite the hero). Each frame should show clear progression of complete walking cycle with distinct leg positions. Frames arranged horizontally in sequence. Clean separation between frames. Wide horizontal composition to fit all 8 frames. Design should be visually distinct from the hero character."
         }}
         }}
 
         Rules:
         - Output ONLY the raw JSON. No explanations, no markdown, no trailing text.
         - Include a "theme" field with a concise theme description.
-        - Include ONLY the "main_character" field with ONE character sprite prompt.
-        - For main_character: MUST include detailed 8-frame walking animation cycle description.
+        - Include BOTH "main_character" and "mob" fields with sprite prompts.
+        - For main_character: MUST include detailed 8-frame walking animation cycle, facing RIGHT.
+        - For mob: MUST include detailed 8-frame walking animation cycle, facing LEFT (opposite direction).
+        - The mob should be a thematic enemy/antagonist that fits the game world.
         - Replace bracketed placeholders with theme-appropriate content based on the game description.
-        - Be creative and detailed with character design.
+        - Be creative and detailed with both character designs.
         - Use double quotes for all JSON keys and strings."""
 
         logger.info(f"[{request_id}] Calling Claude 4.5 Sonnet...")
@@ -629,9 +638,10 @@ async def generate_asset_prompts(request: PromptRequest):
             logger.error(f"[{request_id}] Response text: {response_text}")
             raise ValueError(f"Invalid JSON from Claude: {str(e)}")
 
-        # Extract theme and main character
+        # Extract theme, main character, and mob
         theme = claude_data.get("theme", "")
         main_character = claude_data.get("main_character", {})
+        mob = claude_data.get("mob", {})
 
         # Create background and collectible prompts with theme interpolation
         background_prompt = {
@@ -650,8 +660,12 @@ async def generate_asset_prompts(request: PromptRequest):
         final_response = {
             "theme": theme,
             "main_character": {
-                "description": f"Main character for {theme}",
+                "description": f"Main character (hero) for {theme}",
                 "variations": [main_character]
+            },
+            "mob": {
+                "description": f"Enemy/mob character for {theme}",
+                "variations": [mob]
             },
             "background": {
                 "description": f"Background for {theme}",
@@ -925,6 +939,39 @@ async def generate_game(request: GenerateGameRequest):
     logger.info(f"[{request_id}] Character URL: {request.character_url}")
     logger.info(f"[{request_id}] Frames: {request.num_frames}, Name: {request.game_name}")
 
+    # Check cache first
+    cached_game = game_cache.get_cached_game(
+        background_url=request.background_url,
+        character_url=request.character_url,
+        mob_url=request.mob_url,
+        collectible_url=request.collectible_url,
+        num_frames=request.num_frames
+    )
+    
+    if cached_game:
+        logger.success(f"[{request_id}] Cache hit! Returning cached game")
+        logger.info(f"[{request_id}] Cache key: {cached_game['cache_key']}")
+        logger.info(f"[{request_id}] Cached at: {cached_game.get('cached_at', 'unknown')}")
+        
+        # Extract data from cache
+        scene_config = cached_game['scene_config']
+        platforms_detected = len(scene_config['physics']['platforms'])
+        gaps_detected = len(scene_config['analysis'].get('gaps', []))
+        spawn_point = scene_config['analysis']['spawn']
+        
+        return GenerateGameResponse(
+            game_html=cached_game['game_html'],
+            scene_config=scene_config,
+            platforms_detected=platforms_detected,
+            gaps_detected=gaps_detected,
+            spawn_point=spawn_point,
+            debug_frames=cached_game.get('debug_frames', []),
+            debug_platforms="",  # Platform debug image not cached currently
+            debug_collectibles=cached_game.get('debug_collectibles', [])
+        )
+    
+    logger.info(f"[{request_id}] Cache miss. Generating new game...")
+
     # Create temporary directory for downloads and generation
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -949,6 +996,18 @@ async def generate_game(request: GenerateGameRequest):
                 char_path = temp_path / "character.png"
                 char_path.write_bytes(char_response.content)
                 logger.info(f"[{request_id}] Character sprite downloaded: {len(char_response.content)} bytes")
+
+            # Download mob sprite if provided
+            mob_path = None
+            if request.mob_url:
+                logger.info(f"[{request_id}] Downloading mob sprite for processing...")
+                async with httpx.AsyncClient(timeout=30.0) as http_client:
+                    mob_response = await http_client.get(request.mob_url)
+                    mob_response.raise_for_status()
+
+                    mob_path = temp_path / "mob.png"
+                    mob_path.write_bytes(mob_response.content)
+                    logger.info(f"[{request_id}] Mob sprite downloaded: {len(mob_response.content)} bytes")
 
             # Initialize game generator (need it for sprite_analyzer)
             output_dir = temp_path / "generated_game"
@@ -1014,7 +1073,9 @@ async def generate_game(request: GenerateGameRequest):
                 game_name=request.game_name,
                 collectible_sprites=[],  # Will be updated below if collectibles exist
                 collectible_positions=[],  # Will be updated below if collectibles exist
-                collectible_metadata=[]  # Will be updated below if collectibles exist
+                collectible_metadata=[],  # Will be updated below if collectibles exist
+                mob_sprite_path=str(mob_path) if mob_path else None,
+                mob_sprite_url=request.mob_url
             )
             
             # Generate collectible positions on platforms and regenerate HTML
@@ -1028,15 +1089,18 @@ async def generate_game(request: GenerateGameRequest):
                 for pos in collectible_positions:
                     pos['sprite_index'] = pos['sprite_index'] % len(collectible_sprites)
                 
-                # Regenerate HTML with collectibles and metadata
+                # Regenerate HTML with collectibles and metadata (and mob if present)
                 logger.info(f"[{request_id}] Regenerating game HTML with collectibles...")
+                mob_data = scene_config.get('mob')
                 game_html = game_gen.web_exporter._generate_html(
                     scene_config,
                     request.background_url,
                     scene_config['character']['sprite_path'],
                     collectible_sprites,
                     collectible_positions,
-                    collectible_metadata
+                    collectible_metadata,
+                    mob_data['sprite_path'] if mob_data else None,
+                    mob_data if mob_data else None
                 )
 
             logger.info(f"[{request_id}] Game HTML generated: {len(game_html)} characters")
@@ -1078,6 +1142,28 @@ async def generate_game(request: GenerateGameRequest):
                         "status_effect": metadata.get("status_effect", "Unknown Effect"),
                         "description": metadata.get("description", "")
                     })
+            
+            # Save to cache for future requests
+            logger.info(f"[{request_id}] Caching game for future requests...")
+            try:
+                game_cache.save_game(
+                    background_url=request.background_url,
+                    character_url=request.character_url,
+                    mob_url=request.mob_url,
+                    collectible_url=request.collectible_url,
+                    num_frames=request.num_frames,
+                    game_html=game_html,
+                    scene_config=scene_config,
+                    debug_frames=debug_frames if request.debug_options.get("show_sprite_frames", True) else [],
+                    debug_collectibles=debug_collectibles_data if request.debug_options.get("show_collectibles", True) else [],
+                    platform_analysis=scene_config.get("analysis"),
+                    collectible_metadata=collectible_metadata,
+                    collectible_sprites=collectible_sprites
+                )
+                logger.success(f"[{request_id}] Game cached successfully")
+            except Exception as cache_error:
+                logger.warning(f"[{request_id}] Failed to cache game: {cache_error}")
+                # Don't fail the request if caching fails
             
             return GenerateGameResponse(
                 game_html=game_html,
@@ -1122,6 +1208,42 @@ async def generate_game(request: GenerateGameRequest):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=error_msg
             ) from e
+
+
+@app.get("/game-cache/list")
+async def list_cached_games():
+    """List all cached games with metadata"""
+    try:
+        cached_games = game_cache.get_all_cached_games()
+        cache_size = game_cache.get_cache_size()
+        
+        return {
+            "cached_games": cached_games,
+            "total_games": len(cached_games),
+            "cache_size_bytes": cache_size,
+            "cache_size_mb": round(cache_size / (1024 * 1024), 2)
+        }
+    except Exception as e:
+        logger.error(f"Error listing cached games: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list cached games: {str(e)}"
+        ) from e
+
+
+@app.delete("/game-cache")
+async def clear_game_cache():
+    """Clear all cached games"""
+    try:
+        game_cache.clear_cache()
+        logger.info("Game cache cleared by API request")
+        return {"message": "Game cache cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing game cache: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear game cache"
+        ) from e
 
 
 if __name__ == "__main__":

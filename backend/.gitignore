@@ -35,6 +35,7 @@ logs/
 
 # Cache
 prompt_cache.json
+game_cache/
 
 # IDE
 .vscode/

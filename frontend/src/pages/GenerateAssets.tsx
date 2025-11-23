@@ -136,6 +136,7 @@ const GenerateAssets = () => {
     // Save the generated image URLs to context
     const imageUrls = {
       mainCharacter: assets.find(a => a.groupKey === 'main-character')?.imageUrl,
+      mob: assets.find(a => a.groupKey === 'mob')?.imageUrl,
       background: assets.find(a => a.groupKey === 'background')?.imageUrl,
       collectible: assets.find(a => a.groupKey === 'collectible-item')?.imageUrl,
     }
