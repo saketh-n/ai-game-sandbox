@@ -14,7 +14,13 @@ const GameSandbox = () => {
     spawn_point: { x: number; y: number }
   } | null>(null)
   const [debugFrames, setDebugFrames] = useState<string[]>([])
-  const [showDebug, setShowDebug] = useState(false)
+  const [debugPlatforms, setDebugPlatforms] = useState<string>('')
+  const [showDebugFrames, setShowDebugFrames] = useState(false)
+  const [showDebugPlatforms, setShowDebugPlatforms] = useState(false)
+  const [debugOptions, setDebugOptions] = useState({
+    show_sprite_frames: true,
+    show_platforms: false,
+  })
 
   useEffect(() => {
     // Redirect if no images are available
@@ -42,6 +48,7 @@ const GameSandbox = () => {
           character_url: generatedImages.mainCharacter,
           num_frames: 8,
           game_name: 'AIGeneratedPlatformer',
+          debug_options: debugOptions,
         }),
       })
 
@@ -58,6 +65,7 @@ const GameSandbox = () => {
         spawn_point: data.spawn_point,
       })
       setDebugFrames(data.debug_frames || [])
+      setDebugPlatforms(data.debug_platforms || '')
     } catch (err) {
       console.error('Error generating game:', err)
       setError(err instanceof Error ? err.message : 'Failed to generate game')
@@ -212,6 +220,44 @@ const GameSandbox = () => {
             ) : null}
           </div>
 
+          {/* Debug Options */}
+          {!loading && gameHtml && (
+            <div className="mt-6 bg-white/5 backdrop-blur-lg rounded-xl p-4 border border-white/10">
+              <h3 className="text-white font-semibold mb-3 flex items-center space-x-2">
+                <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+                <span>Debug Visualizations</span>
+              </h3>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center space-x-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={debugOptions.show_sprite_frames}
+                    onChange={(e) => setDebugOptions({...debugOptions, show_sprite_frames: e.target.checked})}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10 text-green-500 focus:ring-green-500 focus:ring-offset-0"
+                  />
+                  <span className="text-purple-200 group-hover:text-white transition-colors">Show Sprite Frames</span>
+                </label>
+                <label className="flex items-center space-x-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={debugOptions.show_platforms}
+                    onChange={(e) => setDebugOptions({...debugOptions, show_platforms: e.target.checked})}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10 text-green-500 focus:ring-green-500 focus:ring-offset-0"
+                  />
+                  <span className="text-purple-200 group-hover:text-white transition-colors">Show Platform Map</span>
+                </label>
+                <button
+                  onClick={handleRegenerate}
+                  className="ml-auto px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-400 rounded text-sm transition-colors border border-yellow-500/30"
+                >
+                  Apply & Regenerate
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Game Stats */}
           {gameStats && !loading && (
             <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -299,11 +345,46 @@ const GameSandbox = () => {
             </div>
           )}
 
-          {/* Debug Panel */}
+          {/* Debug: Platform Visualization */}
+          {debugPlatforms && !loading && (
+            <div className="mt-6 bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 overflow-hidden">
+              <button
+                onClick={() => setShowDebugPlatforms(!showDebugPlatforms)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                  </svg>
+                  <span className="text-white font-semibold">Debug: Platform & Collision Map</span>
+                </div>
+                <svg className={`w-5 h-5 text-white transition-transform ${showDebugPlatforms ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {showDebugPlatforms && (
+                <div className="p-6 border-t border-white/10">
+                  <p className="text-purple-200 text-sm mb-4">
+                    This visualization shows the walkable platforms (green), gaps requiring jumps (red), and the character spawn point (yellow) detected by Claude Vision AI.
+                  </p>
+                  <div className="bg-black rounded-lg border-2 border-white/20 overflow-hidden">
+                    <img
+                      src={debugPlatforms}
+                      alt="Platform Debug Visualization"
+                      className="w-full h-auto"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Debug: Sprite Frames */}
           {debugFrames.length > 0 && !loading && (
             <div className="mt-6 bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 overflow-hidden">
               <button
-                onClick={() => setShowDebug(!showDebug)}
+                onClick={() => setShowDebugFrames(!showDebugFrames)}
                 className="w-full px-6 py-4 flex items-center justify-between hover:bg-white/5 transition-colors"
               >
                 <div className="flex items-center space-x-3">
@@ -323,7 +404,7 @@ const GameSandbox = () => {
                   <span className="text-white font-semibold">Debug: Extracted Sprite Frames ({debugFrames.length})</span>
                 </div>
                 <svg
-                  className={`w-5 h-5 text-white transition-transform ${showDebug ? 'rotate-180' : ''}`}
+                  className={`w-5 h-5 text-white transition-transform ${showDebugFrames ? 'rotate-180' : ''}`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -332,7 +413,7 @@ const GameSandbox = () => {
                 </svg>
               </button>
 
-              {showDebug && (
+              {showDebugFrames && (
                 <div className="p-6 border-t border-white/10">
                   <p className="text-purple-200 text-sm mb-4">
                     These are the individual frames extracted from the sprite sheet after grid detection and rearrangement.
