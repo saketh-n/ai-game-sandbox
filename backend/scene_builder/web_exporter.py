@@ -284,14 +284,18 @@ class WebGameExporter:
                 const platformData = {platforms_json};
 
                 platformData.forEach(platform => {{
+                    // Create rectangle at top-left position (not center)
+                    // Claude Vision returns top-left coordinates, so we set origin to (0, 0)
                     const rect = this.add.rectangle(
-                        platform.x + platform.width / 2,
-                        platform.y + platform.height / 2,
+                        platform.x,
+                        platform.y,
                         platform.width,
                         platform.height,
                         0x00ff00,
                         0.0  // Invisible platforms (set to 0.3 to see them)
                     );
+                    // Set origin to top-left to match Claude's coordinate system
+                    rect.setOrigin(0, 0);
                     this.physics.add.existing(rect, true);
                     this.platforms.add(rect);
                 }});
@@ -330,8 +334,28 @@ class WebGameExporter:
                     repeat: -1
                 }});
 
-                // Add collider
-                this.physics.add.collider(this.player, this.platforms);
+                // Add one-way platform collider (jump through from below, land on top)
+                this.physics.add.collider(this.player, this.platforms, null, (player, platform) => {{
+                    // Allow jumping through platforms from below
+                    // Only collide if player is falling/standing (velocity.y >= 0)
+                    // AND player's bottom is at or above platform's top
+                    const playerBottom = player.body.y + player.body.height;
+                    const platformTop = platform.body.y;
+
+                    // If player is jumping upward (negative velocity), allow pass-through
+                    if (player.body.velocity.y < 0) {{
+                        return false;  // No collision - pass through
+                    }}
+
+                    // If player's bottom is above the platform top, allow collision
+                    // (with small tolerance for smooth landing)
+                    if (playerBottom <= platformTop + 10) {{
+                        return true;  // Collide - player lands on platform
+                    }}
+
+                    // Otherwise no collision (player is inside/below platform)
+                    return false;
+                }}, this);
 
                 // Set up controls
                 this.cursors = this.input.keyboard.createCursorKeys();

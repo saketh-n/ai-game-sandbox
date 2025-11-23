@@ -55,7 +55,12 @@ class GameGenerator:
 
     def analyze_walkable_platforms(self, background_path: Path) -> Dict[str, Any]:
         """
-        Use VLM (Claude Sonnet 4.5) to identify walkable platforms in background
+        Use VLM (Claude Sonnet 4.5) with extended thinking to identify walkable platforms.
+
+        Features:
+        - Extended thinking mode for complex reasoning about platform detection
+        - Detailed prompting for reliable JSON responses
+        - Comprehensive validation and error handling
 
         Args:
             background_path: Path to background image
@@ -64,6 +69,7 @@ class GameGenerator:
             Dictionary with platform data, gaps, and spawn point
         """
         print(f"\n🔍 Analyzing walkable platforms with Claude Vision API...")
+        print(f"  Features: Extended Thinking + JSON Prompting")
         print(f"  Background: {background_path.name}")
 
         # Load and encode image
@@ -80,46 +86,206 @@ class GameGenerator:
         img_base64 = base64.standard_b64encode(buffer.getvalue()).decode('utf-8')
 
         # Create vision analysis prompt
-        prompt = f"""Analyze this 2D platformer game background image ({width}x{height}px) and identify ONLY the walkable grass platforms where a character can stand.
+        prompt = f"""You are analyzing a 2D platformer game background ({width}x{height}px) to identify WALKABLE PLATFORMS where a player character can stand and move.
 
-IMPORTANT RULES:
-- Only green grass surfaces are walkable
-- Trees are decorative (NOT walkable)
-- Fences are decorative (NOT walkable)
-- Water/sky areas are NOT walkable
-- Only detect solid horizontal platforms
+CRITICAL: Your bounding boxes must be PRECISE. Players will fall through platforms if your coordinates are wrong!
 
-For each walkable grass platform, provide:
-1. A descriptive name
-2. Position (x, y) - top-left corner in pixels
-3. Dimensions (width, height) in pixels
+═══════════════════════════════════════════════════════════
+WHAT IS A WALKABLE PLATFORM?
+═══════════════════════════════════════════════════════════
 
-Also identify:
-- Gaps between platforms (where jumping is required)
-- Best spawn point for the player character (on a safe platform)
+A platform MUST have these characteristics:
+1. **Flat or nearly-flat TOP SURFACE** - The player stands on top
+2. **Solid and continuous** - Not transparent, not broken, spans horizontally
+3. **Visible ground/terrain** - Grass, dirt, stone, wood planks, etc.
+4. **Contrasts with background** - Clearly distinguishable from sky/air
+5. **Wide enough for character** - Minimum 50px width for playability
 
-Return your analysis as a JSON object with this exact structure:
+═══════════════════════════════════════════════════════════
+WHAT TO EXCLUDE (NOT walkable):
+═══════════════════════════════════════════════════════════
+
+❌ **Trees**: Vertical objects with trunks - they SIT ON platforms, not ARE platforms
+❌ **Plants/Vegetation**: Grass tufts, flowers, mushrooms - decorations ON platforms
+❌ **Clouds**: In the sky, ethereal, not solid
+❌ **Water**: Lakes, ponds - typically at bottom, blue/transparent
+❌ **Fences/Barriers**: Vertical obstacles that block movement
+❌ **Collectibles**: Coins, gems, power-ups - small decorative items
+❌ **Sky/Background**: Air, distant mountains, clouds
+
+═══════════════════════════════════════════════════════════
+BOUNDING BOX PRECISION RULES:
+═══════════════════════════════════════════════════════════
+
+For EACH platform you detect:
+
+1. **X (left edge)**: Start where the solid ground BEGINS (left-most walkable pixel)
+2. **Y (top edge)**: The EXACT top surface where character feet would touch
+3. **Width**: Full horizontal extent of continuous walkable surface
+4. **Height**: Thin walkable surface layer ONLY (10-20px) - we only need the TOP, not the full platform depth
+
+CRITICAL ACCURACY TIPS:
+- **FOCUS ON PLATFORM TOPS ONLY** - We don't need the full platform body, just the walkable surface
+- Look for the EXACT top surface line of platforms
+- Height should be MINIMAL (10-20px) - just enough for collision detection
+- Ignore decorations sitting ON TOP of platforms when measuring Y
+- If a tree sits on a platform, the platform Y is at the tree's BASE, not tree top
+- Measure the platform UNDERNEATH decorations, not the decorations themselves
+- Ensure bounding boxes capture ONLY the thin walkable surface layer
+
+═══════════════════════════════════════════════════════════
+SPAWN POINT SELECTION:
+═══════════════════════════════════════════════════════════
+
+Choose a spawn point that is:
+- ON a large, stable platform (not a tiny ledge)
+- Near the left or center of the level
+- ABOVE the platform surface (not inside it!)
+  → If platform top is at Y=740, spawn should be Y=700 (40px above)
+- Not near level edges or dangerous gaps
+
+═══════════════════════════════════════════════════════════
+ACCESSIBILITY VALIDATION:
+═══════════════════════════════════════════════════════════
+
+CRITICAL: Only include platforms that are ACCESSIBLE from the spawn point!
+
+For each platform, verify:
+- Can the player REACH this platform from spawn by walking or jumping?
+- If a platform is floating with no way to reach it → EXCLUDE IT
+- If a platform requires impossible jumps (>300px vertical) → EXCLUDE IT
+- If a platform is isolated with no path to it → EXCLUDE IT
+
+Only include platforms in a connected traversal graph from spawn.
+
+═══════════════════════════════════════════════════════════
+GAP IDENTIFICATION:
+═══════════════════════════════════════════════════════════
+
+Identify horizontal gaps where:
+- There is empty space between two platforms
+- Player must JUMP to cross
+- Gap is significant (> 30px wide)
+
+For each gap, provide:
+- Description (e.g., "Gap between left ground and first floating platform")
+- From/to platform names
+- Approximate width in pixels
+- X, Y, width, height for visual representation
+
+═══════════════════════════════════════════════════════════
+OUTPUT FORMAT:
+═══════════════════════════════════════════════════════════
+
+Return ONLY valid JSON (no markdown, no explanation):
+
 {{
   "platforms": [
-    {{"name": "Platform Name", "x": 0, "y": 740, "width": 1024, "height": 28, "walkable": true}},
-    ...
+    {{
+      "name": "Descriptive name (e.g., 'Bottom Ground Platform', 'Upper Left Ledge')",
+      "x": 0,
+      "y": 740,
+      "width": 1024,
+      "height": 28,
+      "walkable": true
+    }}
   ],
   "gaps": [
-    {{"description": "Gap description", "from_platform": "Platform A", "to_platform": "Platform B", "width": 50}},
-    ...
+    {{
+      "description": "Gap between platforms",
+      "from_platform": "Platform A name",
+      "to_platform": "Platform B name",
+      "width": 80,
+      "x": 400,
+      "y": 700,
+      "height": 20
+    }}
   ],
-  "spawn": {{"x": 512, "y": 640}},
-  "notes": ["Tree decorations have no collision", ...]
+  "spawn": {{
+    "x": 100,
+    "y": 700
+  }},
+  "notes": [
+    "Important observations about the level layout",
+    "Any ambiguities or challenges in detection"
+  ]
 }}
 
-Only return the JSON, no other text."""
+Now analyze the image and return your analysis in the structured format."""
 
-        # Call Claude Vision API
-        print(f"  Calling Claude Sonnet 4.5 for analysis...")
+        # Define tool for structured platform detection
+        tools = [
+            {
+                "name": "report_platform_analysis",
+                "description": "Report the detected walkable platforms, gaps, spawn point, and analysis notes",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "platforms": {
+                            "type": "array",
+                            "description": "List of detected walkable platforms",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Descriptive name for the platform"},
+                                    "x": {"type": "integer", "description": "Top-left X coordinate in pixels"},
+                                    "y": {"type": "integer", "description": "Top-left Y coordinate in pixels"},
+                                    "width": {"type": "integer", "description": "Width in pixels"},
+                                    "height": {"type": "integer", "description": "Height in pixels (10-20px for thin walkable surface)"},
+                                    "walkable": {"type": "boolean", "description": "Whether this platform is walkable"}
+                                },
+                                "required": ["name", "x", "y", "width", "height", "walkable"]
+                            }
+                        },
+                        "gaps": {
+                            "type": "array",
+                            "description": "Gaps between platforms requiring jumps",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "description": {"type": "string"},
+                                    "from_platform": {"type": "string"},
+                                    "to_platform": {"type": "string"},
+                                    "width": {"type": "integer"},
+                                    "x": {"type": "integer"},
+                                    "y": {"type": "integer"},
+                                    "height": {"type": "integer"}
+                                },
+                                "required": ["description", "from_platform", "to_platform", "width"]
+                            }
+                        },
+                        "spawn": {
+                            "type": "object",
+                            "description": "Player spawn point (should be above a platform)",
+                            "properties": {
+                                "x": {"type": "integer", "description": "Spawn X coordinate"},
+                                "y": {"type": "integer", "description": "Spawn Y coordinate"}
+                            },
+                            "required": ["x", "y"]
+                        },
+                        "notes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Important observations about the level"
+                        }
+                    },
+                    "required": ["platforms", "gaps", "spawn", "notes"]
+                }
+            }
+        ]
+
+        # Call Claude Vision API with extended thinking (no forced tool choice)
+        print(f"  Calling Claude Sonnet 4.5 with extended thinking...")
 
         response = self.anthropic_client.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=4096,
+            max_tokens=16000,  # Increased for thinking + response
+            thinking={
+                "type": "enabled",
+                "budget_tokens": 10000  # Allow substantial reasoning
+            },
+            tools=tools,
+            # NO tool_choice with thinking mode - can't force tool calls
             messages=[
                 {
                     "role": "user",
@@ -141,19 +307,68 @@ Only return the JSON, no other text."""
             ]
         )
 
-        # Parse response
-        response_text = response.content[0].text.strip()
+        # Extract thinking blocks and tool use
+        thinking_content = []
+        tool_input = None
 
-        # Remove markdown code fences if present
-        if response_text.startswith("```"):
-            lines = response_text.split('\n')
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip() == "```":
-                lines = lines[:-1]
-            response_text = '\n'.join(lines).strip()
+        for block in response.content:
+            if block.type == "thinking":
+                thinking_content.append(block.thinking)
+                print(f"  🧠 Claude's reasoning: {block.thinking[:200]}...")  # Show first 200 chars
+            elif block.type == "tool_use":
+                tool_input = block.input
+                print(f"  ✓ Tool called: {block.name}")
 
-        analysis_data = json.loads(response_text)
+        # Log full thinking to file for analysis
+        if thinking_content:
+            thinking_log_path = self.output_dir / "platform_detection_thinking.txt"
+            with open(thinking_log_path, 'w') as f:
+                f.write("=== CLAUDE'S REASONING FOR PLATFORM DETECTION ===\n\n")
+                f.write('\n\n'.join(thinking_content))
+            print(f"  ✓ Reasoning saved to: {thinking_log_path.name}")
+
+        # If no tool call was made (can happen with thinking mode), re-prompt without thinking
+        if tool_input is None:
+            print(f"  ⚠️  No tool call detected, re-prompting without thinking mode...")
+
+            retry_response = self.anthropic_client.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=16000,
+                tools=tools,
+                tool_choice={"type": "tool", "name": "report_platform_analysis"},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": img_base64
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "text": prompt + "\n\nPlease make a tool call with your analysis."
+                            }
+                        ]
+                    }
+                ]
+            )
+
+            # Extract tool use from retry
+            for block in retry_response.content:
+                if block.type == "tool_use":
+                    tool_input = block.input
+                    print(f"  ✓ Tool called on retry: {block.name}")
+                    break
+
+            if tool_input is None:
+                raise ValueError("Failed to get tool call even after retry")
+
+        # Extract structured data from tool use
+        analysis_data = tool_input
 
         # Add image dimensions
         analysis_data["width"] = width
@@ -163,11 +378,19 @@ Only return the JSON, no other text."""
         print(f"  ✓ Identified {len(analysis_data['gaps'])} gaps requiring jumps")
         print(f"  ✓ Spawn point: ({analysis_data['spawn']['x']}, {analysis_data['spawn']['y']})")
 
-        # Step 2: Verify detections with overlay feedback
-        print(f"\n🔍 Verifying platform detections...")
-        verified_analysis = self.verify_platform_detections(background_path, analysis_data)
+        # Validate and fix spawn point to ensure it's on a platform
+        analysis_data = self._validate_spawn_point(analysis_data)
 
-        return verified_analysis
+        # Self-reflection: Have Claude review its own detections
+        print(f"\n🔄 Self-reflection: Claude reviewing its detections...")
+        analysis_data = self._self_reflect_on_detections(
+            background_path,
+            analysis_data,
+            width,
+            height
+        )
+
+        return analysis_data
 
     def verify_platform_detections(
         self,
@@ -348,6 +571,369 @@ Only return the JSON, no other text."""
                 print(f"    - {correction}")
 
         return verified_data
+
+    def _self_reflect_on_detections(
+        self,
+        background_path: Path,
+        initial_analysis: Dict[str, Any],
+        width: int,
+        height: int
+    ) -> Dict[str, Any]:
+        """
+        Have Claude review its own platform detections and decide if refinements are needed.
+
+        Creates a visualization of detected platforms, shows it to Claude, and asks:
+        1. Are all accessible platforms detected?
+        2. Are any inaccessible platforms included?
+        3. Do platform tops accurately represent walkable surfaces?
+        4. Should any detections be refined?
+
+        Args:
+            background_path: Path to background image
+            initial_analysis: Initial platform detection from Claude
+            width: Image width
+            height: Image height
+
+        Returns:
+            Refined analysis if changes needed, otherwise original analysis
+        """
+        import base64
+        import io
+        from PIL import ImageDraw, ImageFont
+
+        # Create visualization of detections
+        img = Image.open(background_path).convert('RGBA')
+        overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+
+        # Draw detected platforms
+        for i, platform in enumerate(initial_analysis['platforms']):
+            x, y, w, h = platform['x'], platform['y'], platform['width'], platform['height']
+
+            # Draw platform as thin horizontal line (representing top surface)
+            draw.rectangle(
+                [x, y, x + w, y + h],
+                fill=(0, 255, 0, 120),  # Semi-transparent green
+                outline=(0, 255, 0, 255),  # Solid green outline
+                width=2
+            )
+
+            # Label platform
+            label = f"P{i+1}: {platform['name'][:20]}"
+            draw.text((x + 5, y - 15), label, fill=(255, 255, 255, 255))
+
+        # Draw spawn point
+        spawn_x, spawn_y = initial_analysis['spawn']['x'], initial_analysis['spawn']['y']
+        draw.ellipse(
+            [spawn_x - 15, spawn_y - 15, spawn_x + 15, spawn_y + 15],
+            fill=(255, 255, 0, 200),
+            outline=(255, 200, 0, 255),
+            width=3
+        )
+        draw.text((spawn_x + 20, spawn_y - 10), "SPAWN", fill=(255, 255, 255, 255))
+
+        # Composite and encode
+        composite_img = Image.alpha_composite(img, overlay)
+        buffer = io.BytesIO()
+        composite_img.save(buffer, format='PNG')
+        img_base64 = base64.standard_b64encode(buffer.getvalue()).decode('utf-8')
+
+        # Save visualization for debugging
+        viz_path = self.output_dir / "platform_detections_visualization.png"
+        composite_img.save(viz_path)
+        print(f"  ✓ Visualization saved: {viz_path.name}")
+
+        # Self-reflection prompt
+        reflection_prompt = f"""You previously analyzed this platformer background and detected {len(initial_analysis['platforms'])} platforms.
+
+I've visualized your detections:
+- GREEN boxes = platforms you detected (labeled P1, P2, etc.)
+- YELLOW circle = spawn point
+
+CRITICAL REVIEW QUESTIONS:
+
+1. **Platform Tops**: Do the green boxes represent just the THIN WALKABLE TOPS of platforms (10-20px high)?
+   - If any platforms show full bodies instead of just tops, they need refinement
+
+2. **Accessibility**: Can the player REACH all detected platforms from spawn by walking/jumping?
+   - Check each platform: Is it reachable via a connected path?
+   - Exclude any floating platforms with no access
+   - Maximum jump height: ~300px vertical
+
+3. **Completeness**: Are there any ACCESSIBLE walkable surfaces you missed?
+   - Look for platforms the player can reach but weren't detected
+
+4. **Accuracy**: Are all coordinates precise?
+   - Check that Y values match the actual top surface
+   - Verify widths span the full walkable extent
+
+Based on your review, choose ONE of these actions:
+
+A) **DETECTIONS ARE GOOD** - No changes needed, current detections are accurate and complete
+B) **REFINEMENTS NEEDED** - Provide updated platform data with corrections
+
+Return your response as JSON:
+{{
+  "reflection": {{
+    "decision": "GOOD" or "REFINE",
+    "reasoning": "Explain your decision in 2-3 sentences",
+    "issues_found": ["List specific issues if any", "..."],
+    "changes_made": ["List changes if refining", "..."]
+  }},
+  "platforms": [...],  // Updated platforms if REFINE, otherwise same as before
+  "gaps": [...],
+  "spawn": {{"x": ..., "y": ...}},
+  "notes": [...]
+}}
+
+Be critical and thorough. If detections aren't perfect, refine them!"""
+
+        # Define tool for reflection
+        tools = [
+            {
+                "name": "report_reflection_result",
+                "description": "Report the reflection decision and refined platform detections",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "reflection": {
+                            "type": "object",
+                            "properties": {
+                                "decision": {"type": "string", "enum": ["GOOD", "REFINE"], "description": "Whether detections are good or need refinement"},
+                                "reasoning": {"type": "string", "description": "Explanation of the decision"},
+                                "issues_found": {"type": "array", "items": {"type": "string"}, "description": "List of issues found"},
+                                "changes_made": {"type": "array", "items": {"type": "string"}, "description": "List of changes made if refining"}
+                            },
+                            "required": ["decision", "reasoning", "issues_found", "changes_made"]
+                        },
+                        "platforms": {
+                            "type": "array",
+                            "description": "Updated or confirmed platform list",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string"},
+                                    "x": {"type": "integer"},
+                                    "y": {"type": "integer"},
+                                    "width": {"type": "integer"},
+                                    "height": {"type": "integer"},
+                                    "walkable": {"type": "boolean"}
+                                },
+                                "required": ["name", "x", "y", "width", "height", "walkable"]
+                            }
+                        },
+                        "gaps": {"type": "array", "items": {"type": "object"}},
+                        "spawn": {
+                            "type": "object",
+                            "properties": {
+                                "x": {"type": "integer"},
+                                "y": {"type": "integer"}
+                            },
+                            "required": ["x", "y"]
+                        },
+                        "notes": {"type": "array", "items": {"type": "string"}}
+                    },
+                    "required": ["reflection", "platforms", "gaps", "spawn", "notes"]
+                }
+            }
+        ]
+
+        # Call Claude for self-reflection with extended thinking (no forced tool choice)
+        print(f"  Asking Claude to review its detections...")
+
+        response = self.anthropic_client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=16000,
+            thinking={
+                "type": "enabled",
+                "budget_tokens": 8000
+            },
+            tools=tools,
+            # NO tool_choice with thinking mode - can't force tool calls
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": img_base64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": reflection_prompt
+                        }
+                    ]
+                }
+            ]
+        )
+
+        # Extract reflection thinking and tool use
+        thinking_content = []
+        tool_input = None
+
+        for block in response.content:
+            if block.type == "thinking":
+                thinking_content.append(block.thinking)
+                print(f"  🧠 Reflection: {block.thinking[:150]}...")
+            elif block.type == "tool_use":
+                tool_input = block.input
+                print(f"  ✓ Reflection tool called: {block.name}")
+
+        # Save reflection thinking
+        if thinking_content:
+            reflection_log_path = self.output_dir / "platform_reflection_thinking.txt"
+            with open(reflection_log_path, 'w') as f:
+                f.write("=== CLAUDE'S SELF-REFLECTION ON DETECTIONS ===\n\n")
+                f.write('\n\n'.join(thinking_content))
+            print(f"  ✓ Reflection thinking saved: {reflection_log_path.name}")
+
+        # If no tool call was made (can happen with thinking mode), re-prompt without thinking
+        if tool_input is None:
+            print(f"  ⚠️  No tool call detected in reflection, re-prompting without thinking mode...")
+
+            retry_response = self.anthropic_client.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=16000,
+                tools=tools,
+                tool_choice={"type": "tool", "name": "report_reflection_result"},
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": img_base64
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "text": reflection_prompt + "\n\nPlease make a tool call with your reflection results."
+                            }
+                        ]
+                    }
+                ]
+            )
+
+            # Extract tool use from retry
+            for block in retry_response.content:
+                if block.type == "tool_use":
+                    tool_input = block.input
+                    print(f"  ✓ Reflection tool called on retry: {block.name}")
+                    break
+
+            if tool_input is None:
+                raise ValueError("Failed to get reflection tool call even after retry")
+
+        # Extract structured data from tool use
+        reflection_result = tool_input
+
+        decision = reflection_result['reflection']['decision']
+        reasoning = reflection_result['reflection']['reasoning']
+        issues = reflection_result['reflection']['issues_found']
+        changes = reflection_result['reflection']['changes_made']
+
+        print(f"\n  Decision: {decision}")
+        print(f"  Reasoning: {reasoning}")
+
+        if issues:
+            print(f"  Issues found:")
+            for issue in issues:
+                print(f"    - {issue}")
+
+        if decision == "REFINE":
+            print(f"  ✓ Applying refinements:")
+            for change in changes:
+                print(f"    - {change}")
+
+            # Use refined detections
+            refined_data = {
+                "platforms": reflection_result['platforms'],
+                "gaps": reflection_result['gaps'],
+                "spawn": reflection_result['spawn'],
+                "notes": reflection_result['notes'],
+                "width": width,
+                "height": height
+            }
+
+            print(f"  ✓ Refined: {len(refined_data['platforms'])} platforms (was {len(initial_analysis['platforms'])})")
+            return refined_data
+        else:
+            print(f"  ✓ Detections confirmed as accurate")
+            return initial_analysis
+
+    def _validate_spawn_point(self, analysis_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate that the spawn point is on a platform and adjust if necessary.
+
+        Ensures players always start on solid ground, not in mid-air.
+
+        Args:
+            analysis_data: Platform analysis data with spawn point
+
+        Returns:
+            Updated analysis data with validated spawn point
+        """
+        platforms = analysis_data['platforms']
+        spawn_x = analysis_data['spawn']['x']
+        spawn_y = analysis_data['spawn']['y']
+
+        if not platforms:
+            print(f"  ⚠️  WARNING: No platforms detected! Using original spawn point.")
+            return analysis_data
+
+        # Check if spawn point is on a platform
+        def is_on_platform(x, y, platform, tolerance=50):
+            """Check if point (x, y) is on the platform surface"""
+            # X must be within platform horizontal bounds
+            on_platform_x = platform['x'] <= x <= platform['x'] + platform['width']
+
+            # Y should be ABOVE the platform (character stands on top)
+            # Allow some tolerance (player should spawn 40-100px above platform top)
+            on_platform_y = (platform['y'] - 100) <= y <= platform['y']
+
+            return on_platform_x and on_platform_y
+
+        # Find which platform the spawn point is on
+        spawn_platform = None
+        for platform in platforms:
+            if is_on_platform(spawn_x, spawn_y, platform):
+                spawn_platform = platform
+                break
+
+        if spawn_platform:
+            print(f"  ✓ Spawn point validated: on '{spawn_platform['name']}'")
+            return analysis_data
+
+        # Spawn point is NOT on a platform - need to fix it!
+        print(f"  ⚠️  WARNING: Spawn point ({spawn_x}, {spawn_y}) is NOT on any platform!")
+
+        # Find the largest, most stable platform (prefer bottom platforms)
+        # Sort by: 1) Y position (bottom first), 2) Width (larger first)
+        sorted_platforms = sorted(
+            platforms,
+            key=lambda p: (-p['y'], -p['width'])  # Negative for descending order
+        )
+
+        best_platform = sorted_platforms[0]
+
+        # Place spawn point in the center-left of the best platform, above the surface
+        new_spawn_x = best_platform['x'] + best_platform['width'] // 3
+        new_spawn_y = best_platform['y'] - 60  # 60px above platform top
+
+        print(f"  ✓ Corrected spawn point: ({spawn_x}, {spawn_y}) → ({new_spawn_x}, {new_spawn_y})")
+        print(f"    Now on platform: '{best_platform['name']}'")
+
+        analysis_data['spawn']['x'] = new_spawn_x
+        analysis_data['spawn']['y'] = new_spawn_y
+
+        return analysis_data
 
     def process_character_sprite(
         self,

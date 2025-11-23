@@ -208,5 +208,35 @@
     "additional_instructions": "",
     "image_size": "",
     "output_format": "png"
+  },
+  "4139e8027a14d7d59ff0f3b3980049ad": {
+    "image_url": "https://v3b.fal.media/files/b/monkey/flhfoV6Zso0VLUouu3iZT.png",
+    "prompt": "Create a sprite sheet of collectible items in the style of an 8-bit retro video game with a white background with the following space adventure",
+    "category": "Collectible Item",
+    "timestamp": "2025-11-23T03:28:02.601250",
+    "style": "8-bit retro pixel art",
+    "additional_instructions": "",
+    "image_size": "",
+    "output_format": "png"
+  },
+  "8bc4b7d0120c7b41087752f9404de7bb": {
+    "image_url": "https://v3b.fal.media/files/b/kangaroo/RsIuJM31Alv7uCTQ_QCRa.png",
+    "prompt": "Create a sprite sheet of 2D platformer background elements for space adventure in 8-bit pixel art style.\n\nREQUIRED ELEMENTS (each separated by white space):\n1. GROUND/PLATFORM TILES (3-5 variations):\n",
+    "category": "Background",
+    "timestamp": "2025-11-23T03:28:15.226742",
+    "style": "",
+    "additional_instructions": "",
+    "image_size": "landscape_4_3",
+    "output_format": "png"
+  },
+  "eaf3010adb0dad3b5aeb42044c6d980f": {
+    "image_url": "https://v3b.fal.media/files/b/tiger/GVzNU97VKU92zON4UveHd.png",
+    "prompt": "2D sprite sheet of space explorer astronaut wearing sleek white and blue armored space suit with glowing cyan visor helmet and jet pack, pixel art style for platformer game. Eight frames of walking an",
+    "category": "Main Character",
+    "timestamp": "2025-11-23T03:28:13.446954",
+    "style": "pixel art sprite sheet, 2D platformer game graphics, retro gaming aesthetic",
+    "additional_instructions": "Ensure perfect consistency in character design across all eight frames. Each frame should show clear progression of complete walking cycle with distinct leg positions. Frames arranged horizontally in ",
+    "image_size": "",
+    "output_format": "png"
   }
 }
