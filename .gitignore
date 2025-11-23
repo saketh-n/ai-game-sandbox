@@ -13,6 +13,7 @@ backend/venv/
 backend/env/
 backend/.env
 backend/playable_game/
+backend/image_cache.json
 
 /node_modules
 

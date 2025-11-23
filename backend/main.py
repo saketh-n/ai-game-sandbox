@@ -19,6 +19,7 @@ from image_cache_manager import image_cache
 from image_generation.generator import ImageGenerator
 from image_generation.config import ImageGenerationConfig
 from game_generator import GameGenerator
+from sprite_processing.sprite_sheet_analyzer import SpriteSheetAnalyzer
 
 # Load environment variables
 load_dotenv()
@@ -99,6 +100,7 @@ class GenerateImageResponse(BaseModel):
 class GenerateGameRequest(BaseModel):
     background_url: str = Field(..., description="URL to background image")
     character_url: str = Field(..., description="URL to character sprite sheet")
+    collectible_url: Optional[str] = Field(None, description="URL to collectible sprite sheet")
     num_frames: int = Field(default=8, description="Number of animation frames in sprite sheet")
     game_name: str = Field(default="GeneratedGame", description="Name for the generated game")
     debug_options: dict = Field(default={"show_sprite_frames": True, "show_platforms": False}, description="Debug visualization options")
@@ -113,6 +115,304 @@ class GenerateGameResponse(BaseModel):
     debug_platforms: str = Field(default="", description="Base64 encoded platform visualization")
 
 image_generator = ImageGenerator(api_key=os.getenv("FAL_KEY"))
+
+
+def analyze_collectible_metadata(collectible_path: Path, anthropic_client) -> List[dict]:
+    """
+    Use Claude Vision to identify each collectible and get name + description.
+    
+    Args:
+        collectible_path: Path to collectible sprite sheet image
+        anthropic_client: Anthropic client for API calls
+        
+    Returns:
+        List of dicts with 'name' and 'description' for each collectible (left to right order)
+    """
+    import base64
+    
+    logger.info(f"Analyzing collectible metadata with Claude Vision...")
+    
+    # Load and encode image
+    with open(collectible_path, 'rb') as f:
+        image_data = base64.standard_b64encode(f.read()).decode('utf-8')
+    
+    # Determine media type
+    ext = collectible_path.suffix.lower()
+    media_type_map = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif'
+    }
+    media_type = media_type_map.get(ext, 'image/png')
+    
+    # Create vision prompt
+    prompt = """Analyze this sprite sheet of collectible items for a video game.
+
+Looking at the image from LEFT TO RIGHT, identify each collectible item and provide:
+1. **Name**: A descriptive, thematic name (2-4 words) based on what you see
+   - Examples: "Golden Victory Coin", "Mystic Power Crystal", "Ancient Health Potion", "Enchanted Speed Boots"
+   - Make it evocative and game-appropriate
+   
+2. **Status Effect**: A relevant gameplay effect this collectible provides
+   - Examples: "+10 Points", "Restores Health", "Speed Boost", "Double Jump", "Shield", "Extra Life"
+   - Be creative but clear about what it does
+   
+3. **Description**: A brief, exciting flavor text (1 sentence)
+   - Combine the item's appearance with its effect
+   - Make it fun and engaging for players
+
+Respond in this EXACT JSON format (no markdown, just JSON):
+{
+  "collectibles": [
+    {
+      "name": "Descriptive Item Name",
+      "status_effect": "What It Does",
+      "description": "A single sentence combining lore and effect."
+    }
+  ]
+}
+
+EXAMPLES:
+{
+  "collectibles": [
+    {
+      "name": "Golden Victory Coin",
+      "status_effect": "+10 Points",
+      "description": "A shimmering gold coin that adds to your score!"
+    },
+    {
+      "name": "Crimson Health Potion",
+      "status_effect": "Restores 50 HP",
+      "description": "A bubbling red elixir that heals your wounds instantly."
+    },
+    {
+      "name": "Lightning Speed Star",
+      "status_effect": "Speed Boost",
+      "description": "A sparkling star that makes you run twice as fast!"
+    }
+  ]
+}
+
+IMPORTANT: 
+- List items in LEFT-TO-RIGHT order as they appear in the sprite sheet
+- Include ALL items you can see in the image
+- Name should be descriptive and thematic (not generic like "Coin 1")
+- Status effect should be a clear gameplay mechanic
+- Description should be one engaging sentence"""
+
+    try:
+        # Call Claude Vision API
+        message = anthropic_client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=2000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_data,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ],
+                }
+            ],
+        )
+        
+        response_text = message.content[0].text.strip()
+        logger.info(f"Claude Vision response: {response_text[:200]}...")
+        
+        # Strip markdown code blocks if present (```json ... ```)
+        if response_text.startswith("```"):
+            # Remove opening ```json or ```
+            response_text = response_text.split("\n", 1)[1] if "\n" in response_text else response_text[3:]
+            # Remove closing ```
+            if response_text.endswith("```"):
+                response_text = response_text.rsplit("```", 1)[0]
+            response_text = response_text.strip()
+        
+        # Parse JSON response
+        collectibles_data = json.loads(response_text)
+        collectibles_list = collectibles_data.get("collectibles", [])
+        
+        logger.info(f"Identified {len(collectibles_list)} collectibles:")
+        for i, item in enumerate(collectibles_list):
+            logger.info(f"  {i+1}. {item['name']}: {item['description']}")
+        
+        return collectibles_list
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Claude Vision response as JSON: {e}")
+        logger.error(f"Response was: {response_text}")
+        # Return empty list as fallback
+        return []
+    except Exception as e:
+        logger.error(f"Error analyzing collectible metadata: {e}")
+        return []
+
+
+def segment_collectible_sprites(collectible_path: Path, sprite_analyzer, expected_count: int = None) -> List[str]:
+    """
+    Segment collectible sprite sheet into individual sprites using the same method as character sprites.
+    
+    Uses SpriteSheetAnalyzer to:
+    1. Analyze layout with Claude Vision
+    2. Remove background
+    3. Extract frames using connected component analysis
+    4. Return individual sprite images as base64 data URLs
+    
+    Args:
+        collectible_path: Path to collectible sprite sheet image
+        sprite_analyzer: SpriteSheetAnalyzer instance
+        
+    Returns:
+        List of base64 data URLs for individual collectible sprites
+    """
+    from PIL import Image
+    import base64
+    import io
+    from sprite_processing.background_remover import BackgroundRemover
+    
+    logger.info(f"Segmenting collectible sprites from: {collectible_path}")
+    
+    # STEP 1: Analyze sprite sheet layout using Claude Vision (or use provided count)
+    if expected_count:
+        logger.info(f"  Using provided expected count: {expected_count} collectibles")
+        # Create a simplified layout_info based on expected count
+        layout_info = {
+            'layout_type': 'horizontal',
+            'rows': 1,
+            'columns': expected_count,
+            'total_frames': expected_count,
+            'frame_width': 128,  # Will be recalculated during extraction
+            'frame_height': 128
+        }
+    else:
+        logger.info("  Analyzing collectible layout with Claude Vision...")
+        layout_info = sprite_analyzer.analyze_sprite_sheet_layout(collectible_path)
+        logger.info(f"  Layout: {layout_info['layout_type']} ({layout_info['rows']}×{layout_info['columns']})")
+        logger.info(f"  Total collectibles: {layout_info['total_frames']}")
+    
+    # STEP 2: Remove background (assume white background)
+    logger.info("  Removing background from collectible sheet...")
+    original_img = Image.open(collectible_path)
+    if original_img.mode != 'RGBA':
+        original_img = original_img.convert('RGBA')
+    
+    bg_remover = BackgroundRemover()
+    cleaned_img = bg_remover.remove_background(
+        original_img,
+        background_color=(255, 255, 255),  # White background
+        tolerance=40
+    )
+    
+    # Auto-crop to remove excess transparent space
+    cleaned_img = bg_remover.auto_crop(cleaned_img, padding=5)
+    logger.info(f"  Background removed: {cleaned_img.size[0]}x{cleaned_img.size[1]}px")
+    
+    # STEP 3: Extract frames using smart extraction (connected component analysis)
+    logger.info("  Extracting individual collectible sprites...")
+    
+    # Save cleaned image temporarily for extraction
+    temp_cleaned_path = collectible_path.parent / f"cleaned_{collectible_path.name}"
+    cleaned_img.save(temp_cleaned_path)
+    
+    # Use the same smart extraction method as character sprites
+    frames, frame_width, frame_height = sprite_analyzer.extract_frames_smart(
+        temp_cleaned_path,
+        rows=layout_info['rows'],
+        columns=layout_info['columns']
+    )
+    
+    logger.info(f"  Extracted {len(frames)} collectible sprites at {frame_width}x{frame_height}px each")
+    
+    # Clean up temp file
+    if temp_cleaned_path.exists():
+        temp_cleaned_path.unlink()
+    
+    # STEP 4: Convert each frame to base64 data URL
+    sprite_data_urls = []
+    for i, frame in enumerate(frames):
+        buffer = io.BytesIO()
+        frame.save(buffer, format='PNG')
+        sprite_data_url = f"data:image/png;base64,{base64.b64encode(buffer.getvalue()).decode()}"
+        sprite_data_urls.append(sprite_data_url)
+        logger.info(f"    Collectible {i+1}/{len(frames)}: {frame.size[0]}x{frame.size[1]}px")
+    
+    return sprite_data_urls
+
+
+def generate_collectible_positions(
+    platforms: List[dict],
+    num_collectibles: int = 10,
+    min_spacing: int = 80
+) -> List[dict]:
+    """
+    Generate random positions on top of platforms for collectibles.
+    
+    Args:
+        platforms: List of platform dictionaries with x, y, width, height
+        num_collectibles: Number of collectibles to place
+        min_spacing: Minimum spacing between collectibles
+        
+    Returns:
+        List of collectible position dicts with x, y, sprite_index
+    """
+    import random
+    
+    collectible_positions = []
+    placed_positions = []
+    
+    # Try to place collectibles on platforms
+    attempts = 0
+    max_attempts = num_collectibles * 10
+    
+    while len(collectible_positions) < num_collectibles and attempts < max_attempts:
+        attempts += 1
+        
+        # Pick a random platform
+        platform = random.choice(platforms)
+        
+        # Generate random x position on platform (with margin)
+        margin = 30
+        if platform['width'] < margin * 2:
+            continue
+            
+        x = random.randint(
+            platform['x'] + margin,
+            platform['x'] + platform['width'] - margin
+        )
+        
+        # Position collectible above platform
+        y = platform['y'] - 20  # 20px above platform
+        
+        # Check spacing from other collectibles
+        too_close = False
+        for placed_x, placed_y in placed_positions:
+            distance = ((x - placed_x) ** 2 + (y - placed_y) ** 2) ** 0.5
+            if distance < min_spacing:
+                too_close = True
+                break
+        
+        if not too_close:
+            collectible_positions.append({
+                'x': x,
+                'y': y,
+                'sprite_index': random.randint(0, 10)  # Will be clamped to actual sprite count
+            })
+            placed_positions.append((x, y))
+    
+    logger.info(f"Generated {len(collectible_positions)} collectible positions")
+    return collectible_positions
 
 
 def generate_platform_debug(
@@ -603,8 +903,8 @@ async def generate_game(request: GenerateGameRequest):
         try:
             # Download background image for analysis
             logger.info(f"[{request_id}] Downloading background image for analysis...")
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                bg_response = await client.get(request.background_url)
+            async with httpx.AsyncClient(timeout=30.0) as http_client:
+                bg_response = await http_client.get(request.background_url)
                 bg_response.raise_for_status()
 
                 bg_path = temp_path / "background.png"
@@ -613,17 +913,65 @@ async def generate_game(request: GenerateGameRequest):
 
             # Download character sprite for processing
             logger.info(f"[{request_id}] Downloading character sprite for processing...")
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                char_response = await client.get(request.character_url)
+            async with httpx.AsyncClient(timeout=30.0) as http_client:
+                char_response = await http_client.get(request.character_url)
                 char_response.raise_for_status()
 
                 char_path = temp_path / "character.png"
                 char_path.write_bytes(char_response.content)
                 logger.info(f"[{request_id}] Character sprite downloaded: {len(char_response.content)} bytes")
 
-            # Initialize game generator
+            # Initialize game generator (need it for sprite_analyzer)
             output_dir = temp_path / "generated_game"
             game_gen = GameGenerator(output_dir=str(output_dir))
+
+            # Download and process collectibles if provided
+            collectible_sprites = []
+            collectible_positions = []
+            collectible_metadata = []
+            if request.collectible_url:
+                logger.info(f"[{request_id}] Downloading collectible sprite sheet...")
+                async with httpx.AsyncClient(timeout=30.0) as http_client:
+                    coll_response = await http_client.get(request.collectible_url)
+                    coll_response.raise_for_status()
+
+                    coll_path = temp_path / "collectibles.png"
+                    coll_path.write_bytes(coll_response.content)
+                    logger.info(f"[{request_id}] Collectibles downloaded: {len(coll_response.content)} bytes")
+
+                # Step 1: Analyze collectible metadata with Claude Vision
+                logger.info(f"[{request_id}] Analyzing collectible metadata with Claude Vision...")
+                collectible_metadata = await asyncio.to_thread(
+                    analyze_collectible_metadata,
+                    coll_path,
+                    client  # Global Anthropic client (not http_client)
+                )
+                logger.info(f"[{request_id}] Identified {len(collectible_metadata)} collectibles with metadata")
+
+                # Step 2: Segment collectible sprites using the same analyzer as character sprites
+                logger.info(f"[{request_id}] Segmenting collectible sprites...")
+                collectible_sprites = await asyncio.to_thread(
+                    segment_collectible_sprites,
+                    coll_path,
+                    game_gen.sprite_analyzer,  # Pass the sprite analyzer
+                    len(collectible_metadata)  # Pass expected count from metadata
+                )
+                logger.info(f"[{request_id}] Segmented {len(collectible_sprites)} collectible sprites")
+                
+                # Verify counts match (metadata should match sprite count)
+                if len(collectible_metadata) != len(collectible_sprites):
+                    logger.warning(
+                        f"[{request_id}] Mismatch: {len(collectible_metadata)} metadata items vs "
+                        f"{len(collectible_sprites)} sprites. Some collectibles may not have descriptions."
+                    )
+                    # Pad metadata with generic entries if needed
+                    while len(collectible_metadata) < len(collectible_sprites):
+                        idx = len(collectible_metadata)
+                        collectible_metadata.append({
+                            "name": f"Mystery Item {idx + 1}",
+                            "status_effect": "Unknown Effect",
+                            "description": "A mysterious collectible item with unknown powers!"
+                        })
 
             # Generate game with URLs (runs in thread pool since it's blocking)
             logger.info(f"[{request_id}] Generating game with Claude Vision analysis...")
@@ -634,8 +982,33 @@ async def generate_game(request: GenerateGameRequest):
                 background_image_path=str(bg_path),
                 background_image_url=request.background_url,
                 num_frames=request.num_frames,
-                game_name=request.game_name
+                game_name=request.game_name,
+                collectible_sprites=[],  # Will be updated below if collectibles exist
+                collectible_positions=[],  # Will be updated below if collectibles exist
+                collectible_metadata=[]  # Will be updated below if collectibles exist
             )
+            
+            # Generate collectible positions on platforms and regenerate HTML
+            if collectible_sprites and len(collectible_sprites) > 0:
+                logger.info(f"[{request_id}] Generating collectible positions on platforms...")
+                collectible_positions = generate_collectible_positions(
+                    platforms=scene_config["physics"]["platforms"],
+                    num_collectibles=min(15, len(scene_config["physics"]["platforms"]) * 2)
+                )
+                # Clamp sprite indices to actual sprite count
+                for pos in collectible_positions:
+                    pos['sprite_index'] = pos['sprite_index'] % len(collectible_sprites)
+                
+                # Regenerate HTML with collectibles and metadata
+                logger.info(f"[{request_id}] Regenerating game HTML with collectibles...")
+                game_html = game_gen.web_exporter._generate_html(
+                    scene_config,
+                    request.background_url,
+                    scene_config['character']['sprite_path'],
+                    collectible_sprites,
+                    collectible_positions,
+                    collectible_metadata
+                )
 
             logger.info(f"[{request_id}] Game HTML generated: {len(game_html)} characters")
             logger.info(f"[{request_id}] Debug frames extracted: {len(debug_frames)}")

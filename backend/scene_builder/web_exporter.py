@@ -67,11 +67,17 @@ class WebGameExporter:
         self,
         config: Dict,
         bg_path: str,
-        sprite_path: str
+        sprite_path: str,
+        collectible_sprites: list = None,
+        collectible_positions: list = None,
+        collectible_metadata: list = None
     ) -> str:
         """Generate complete HTML5 game"""
 
         platforms_json = json.dumps(config['physics']['platforms'])
+        collectible_sprites_json = json.dumps(collectible_sprites if collectible_sprites else [])
+        collectible_positions_json = json.dumps(collectible_positions if collectible_positions else [])
+        collectible_metadata_json = json.dumps(collectible_metadata if collectible_metadata else [])
 
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -172,6 +178,58 @@ class WebGameExporter:
             font-size: 0.9rem;
         }}
 
+        #collectible-notification {{
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 35px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            font-size: 1.1rem;
+            font-weight: bold;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            max-width: 550px;
+            text-align: center;
+            border: 2px solid rgba(255,255,255,0.3);
+        }}
+
+        #collectible-notification.show {{
+            opacity: 1;
+        }}
+
+        .notification-name {{
+            font-size: 1.4rem;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }}
+
+        .notification-status {{
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+            color: #FFD700;
+            font-weight: bold;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            background: rgba(255,255,255,0.1);
+            padding: 5px 15px;
+            border-radius: 20px;
+            display: inline-block;
+        }}
+
+        .notification-description {{
+            font-size: 0.9rem;
+            font-weight: normal;
+            opacity: 0.95;
+            font-style: italic;
+        }}
+
         .loading {{
             position: absolute;
             top: 50%;
@@ -185,6 +243,11 @@ class WebGameExporter:
 </head>
 <body>
     <div id="loading" class="loading">Loading game...</div>
+    <div id="collectible-notification">
+        <div class="notification-name"></div>
+        <div class="notification-status"></div>
+        <div class="notification-description"></div>
+    </div>
     <div id="game-container" style="display:none;"></div>
 
     <div class="controls" id="controls" style="display:none;">
@@ -254,6 +317,25 @@ class WebGameExporter:
                     }});
                 }}
 
+                // Load collectible sprites and metadata
+                const collectibleSprites = {collectible_sprites_json};
+                const collectibleMetadata = {collectible_metadata_json};
+                this.collectibleSprites = collectibleSprites;
+                this.collectibleMetadata = collectibleMetadata;
+                
+                if (collectibleSprites.length > 0) {{
+                    console.log('Loading ' + collectibleSprites.length + ' collectible sprites...');
+                    console.log('Collectible metadata:', collectibleMetadata);
+                    collectibleSprites.forEach((spriteDataUrl, index) => {{
+                        const collectibleImage = new Image();
+                        collectibleImage.onload = () => {{
+                            this.textures.addImage('collectible_' + index, collectibleImage);
+                            console.log('Collectible sprite ' + index + ' loaded');
+                        }};
+                        collectibleImage.src = spriteDataUrl;
+                    }});
+                }}
+
                 // Loading progress
                 this.load.on('progress', (value) => {{
                     console.log('Loading: ' + Math.round(value * 100) + '%');
@@ -313,8 +395,12 @@ class WebGameExporter:
 
                 // Scale player to reasonable size
                 const targetHeight = 100;  // Target height in pixels
-                const scale = targetHeight / {config['character']['frame_height']};
-                this.player.setScale(scale);
+                const playerScale = targetHeight / {config['character']['frame_height']};
+                this.player.setScale(playerScale);
+                
+                // Store player dimensions for collectible scaling
+                const playerDisplayHeight = targetHeight;
+                const playerDisplayWidth = {config['character']['frame_width']} * playerScale;
 
                 // Create animations
                 this.anims.create({{
@@ -357,6 +443,80 @@ class WebGameExporter:
                     return false;
                 }}, this);
 
+                // Create collectibles
+                const collectiblePositions = {collectible_positions_json};
+                this.collectibles = this.physics.add.group();
+                this.collectedCount = 0;
+                
+                if (collectiblePositions.length > 0 && this.collectibleSprites.length > 0) {{
+                    console.log('Creating ' + collectiblePositions.length + ' collectibles...');
+                    
+                    // Calculate collectible target size (1/2 of character dimensions)
+                    const collectibleTargetHeight = playerDisplayHeight / 2;
+                    const collectibleTargetWidth = playerDisplayWidth / 2;
+                    
+                    collectiblePositions.forEach(pos => {{
+                        // Ensure sprite index is valid
+                        const spriteIndex = pos.sprite_index % this.collectibleSprites.length;
+                        const collectible = this.physics.add.sprite(
+                            pos.x,
+                            pos.y,
+                            'collectible_' + spriteIndex
+                        );
+                        
+                        // Get actual collectible texture dimensions
+                        const collectibleTexture = this.textures.get('collectible_' + spriteIndex);
+                        const collectibleSourceWidth = collectibleTexture.source[0].width;
+                        const collectibleSourceHeight = collectibleTexture.source[0].height;
+                        
+                        // Scale collectible to be 1/2 the size of the character
+                        // Use height as the primary scaling factor
+                        const collectibleScale = collectibleTargetHeight / collectibleSourceHeight;
+                        collectible.setScale(collectibleScale);
+                        
+                        console.log('Collectible ' + spriteIndex + ': source=' + collectibleSourceWidth + 'x' + collectibleSourceHeight + 
+                                    ', scale=' + collectibleScale.toFixed(2) + ', display=' + 
+                                    (collectibleSourceWidth * collectibleScale).toFixed(0) + 'x' + 
+                                    (collectibleSourceHeight * collectibleScale).toFixed(0));
+                        collectible.setCollideWorldBounds(true);
+                        
+                        // Store sprite index and metadata on the collectible for later retrieval
+                        collectible.setData('spriteIndex', spriteIndex);
+                        
+                        // Add floating animation
+                        this.tweens.add({{
+                            targets: collectible,
+                            y: pos.y - 10,
+                            duration: 1000 + Math.random() * 500,
+                            yoyo: true,
+                            repeat: -1,
+                            ease: 'Sine.easeInOut'
+                        }});
+                        
+                        // Add rotation animation
+                        this.tweens.add({{
+                            targets: collectible,
+                            angle: 360,
+                            duration: 3000,
+                            repeat: -1,
+                            ease: 'Linear'
+                        }});
+                        
+                        this.collectibles.add(collectible);
+                    }});
+                    
+                    // Add collision detection between player and collectibles
+                    this.physics.add.overlap(
+                        this.player,
+                        this.collectibles,
+                        this.collectItem,
+                        null,
+                        this
+                    );
+                    
+                    console.log('Collectibles created with collision detection');
+                }}
+
                 // Set up controls
                 this.cursors = this.input.keyboard.createCursorKeys();
                 this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -378,6 +538,54 @@ class WebGameExporter:
                 // Spawn position
                 this.spawnX = {config['character']['spawn_x']};
                 this.spawnY = {config['character']['spawn_y']};
+            }}
+
+            collectItem(player, collectible) {{
+                // Get sprite index from collectible data
+                const spriteIndex = collectible.getData('spriteIndex');
+                
+                // Get metadata for this collectible
+                const metadata = this.collectibleMetadata[spriteIndex];
+                const name = metadata ? metadata.name : 'Collectible';
+                const statusEffect = metadata ? metadata.status_effect : 'Mystery Effect';
+                const description = metadata ? metadata.description : 'You found something!';
+                
+                // Display notification
+                this.showCollectibleNotification(name, statusEffect, description);
+                
+                // Visual feedback - scale up then disappear
+                this.tweens.add({{
+                    targets: collectible,
+                    scale: {{ from: collectible.scale, to: collectible.scale * 1.5 }},
+                    alpha: {{ from: 1, to: 0 }},
+                    duration: 200,
+                    onComplete: () => {{
+                        collectible.destroy();
+                        this.collectedCount++;
+                        console.log('Collected "' + name + '" (' + statusEffect + ')! Total: ' + this.collectedCount);
+                    }}
+                }});
+            }}
+
+            showCollectibleNotification(name, statusEffect, description) {{
+                // Get notification element
+                const notification = document.getElementById('collectible-notification');
+                const nameEl = notification.querySelector('.notification-name');
+                const statusEl = notification.querySelector('.notification-status');
+                const descEl = notification.querySelector('.notification-description');
+                
+                // Set text
+                nameEl.textContent = name;
+                statusEl.textContent = statusEffect;
+                descEl.textContent = description;
+                
+                // Show notification
+                notification.classList.add('show');
+                
+                // Hide after 3.5 seconds (slightly longer to read status effect)
+                setTimeout(() => {{
+                    notification.classList.remove('show');
+                }}, 3500);
             }}
 
             update() {{

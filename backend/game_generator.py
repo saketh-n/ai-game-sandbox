@@ -1303,7 +1303,10 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
         background_image_url: str,
         num_frames: int = 8,
         game_name: str = "PlatformerGame",
-        player_config: Optional[Dict[str, Any]] = None
+        player_config: Optional[Dict[str, Any]] = None,
+        collectible_sprites: list = None,
+        collectible_positions: list = None,
+        collectible_metadata: list = None
     ) -> tuple[str, Dict[str, Any], list[str]]:
         """
         Generate game HTML using original image URLs (for Phaser compatibility)
@@ -1387,12 +1390,15 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
             "analysis": platform_analysis
         }
 
-        # Generate HTML with URLs (background URL + sprite data URI)
+        # Generate HTML with URLs (background URL + sprite data URI + collectibles)
         print(f"\n🔨 Generating HTML with URL references...")
         game_html = self.web_exporter._generate_html(
             scene_config,
             background_image_url,  # Pass original URL for background
-            processed_sprite_data_url  # Pass data URL for processed sprite
+            processed_sprite_data_url,  # Pass data URL for processed sprite
+            collectible_sprites,  # Pass collectible sprite data URLs
+            collectible_positions,  # Pass collectible positions
+            collectible_metadata  # Pass collectible metadata
         )
 
         print(f"  ✓ Game HTML generated: {len(game_html)} characters")
