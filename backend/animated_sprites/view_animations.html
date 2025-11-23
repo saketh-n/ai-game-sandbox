@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pineapple Warrior Animations</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            font-size: 3rem;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            text-align: center;
+            color: rgba(255,255,255,0.9);
+            font-size: 1.2rem;
+            margin-bottom: 40px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.5rem;
+        }
+
+        .fps-label {
+            color: #667eea;
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+        }
+
+        .animation-container {
+            background: repeating-conic-gradient(#e0e0e0 0% 25%, transparent 0% 50%)
+                        50% / 20px 20px;
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 200px;
+        }
+
+        .animation-container img {
+            max-width: 100%;
+            height: auto;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        .info {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .info-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .comparison {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .comparison h2 {
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+        }
+
+        .comparison-item {
+            text-align: center;
+        }
+
+        .comparison-item img {
+            width: 100%;
+            height: auto;
+            background: repeating-conic-gradient(#e0e0e0 0% 25%, transparent 0% 50%)
+                        50% / 20px 20px;
+            border-radius: 8px;
+            padding: 10px;
+            image-rendering: pixelated;
+        }
+
+        .comparison-item p {
+            margin-top: 10px;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .frames-section {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-top: 30px;
+        }
+
+        .frames-section h2 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .frames-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 15px;
+        }
+
+        .frame-item {
+            background: repeating-conic-gradient(#e0e0e0 0% 25%, transparent 0% 50%)
+                        50% / 20px 20px;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .frame-item img {
+            width: 100%;
+            height: auto;
+            image-rendering: pixelated;
+        }
+
+        .frame-label {
+            margin-top: 5px;
+            font-size: 0.8rem;
+            color: #666;
+            font-weight: 600;
+        }
+
+        .tips {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 20px 30px;
+            margin-top: 30px;
+            color: white;
+        }
+
+        .tips h3 {
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        .tips ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .tips li {
+            margin-bottom: 10px;
+            padding-left: 25px;
+            position: relative;
+        }
+
+        .tips li:before {
+            content: "🎮";
+            position: absolute;
+            left: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍍 Pineapple Warrior Animations</h1>
+        <p class="subtitle">Walking cycle at various frame rates • Infinite loop • Transparent background</p>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Slow</h2>
+                <div class="fps-label">6 FPS • Retro Style</div>
+                <div class="animation-container">
+                    <img src="pineapple_warrior_slow_6fps.gif" alt="6 FPS Animation">
+                </div>
+                <div class="info">
+                    <div class="info-row">
+                        <span class="label">Frame Rate:</span>
+                        <span>6 FPS</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Duration/Frame:</span>
+                        <span>167ms</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Best For:</span>
+                        <span>Retro games, 8-bit style</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Medium</h2>
+                <div class="fps-label">10 FPS • Balanced</div>
+                <div class="animation-container">
+                    <img src="pineapple_warrior_medium_10fps.gif" alt="10 FPS Animation">
+                </div>
+                <div class="info">
+                    <div class="info-row">
+                        <span class="label">Frame Rate:</span>
+                        <span>10 FPS</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Duration/Frame:</span>
+                        <span>100ms</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Best For:</span>
+                        <span>Most 2D games, balanced feel</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Fast</h2>
+                <div class="fps-label">15 FPS • Smooth</div>
+                <div class="animation-container">
+                    <img src="pineapple_warrior_fast_15fps.gif" alt="15 FPS Animation">
+                </div>
+                <div class="info">
+                    <div class="info-row">
+                        <span class="label">Frame Rate:</span>
+                        <span>15 FPS</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Duration/Frame:</span>
+                        <span>67ms</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Best For:</span>
+                        <span>Modern games, smooth motion</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Very Fast</h2>
+                <div class="fps-label">24 FPS • Cinematic</div>
+                <div class="animation-container">
+                    <img src="pineapple_warrior_very_fast_24fps.gif" alt="24 FPS Animation">
+                </div>
+                <div class="info">
+                    <div class="info-row">
+                        <span class="label">Frame Rate:</span>
+                        <span>24 FPS</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Duration/Frame:</span>
+                        <span>42ms</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="label">Best For:</span>
+                        <span>Cinematic quality, cutscenes</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="comparison">
+            <h2>Side-by-Side Comparison</h2>
+            <div class="comparison-grid">
+                <div class="comparison-item">
+                    <img src="pineapple_warrior_slow_6fps.gif" alt="6 FPS">
+                    <p>6 FPS</p>
+                </div>
+                <div class="comparison-item">
+                    <img src="pineapple_warrior_medium_10fps.gif" alt="10 FPS">
+                    <p>10 FPS</p>
+                </div>
+                <div class="comparison-item">
+                    <img src="pineapple_warrior_fast_15fps.gif" alt="15 FPS">
+                    <p>15 FPS</p>
+                </div>
+                <div class="comparison-item">
+                    <img src="pineapple_warrior_very_fast_24fps.gif" alt="24 FPS">
+                    <p>24 FPS</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="frames-section">
+            <h2>Individual Frames (8 total)</h2>
+            <div class="frames-grid">
+                <div class="frame-item">
+                    <img src="frames/frame_00.png" alt="Frame 0">
+                    <div class="frame-label">Frame 0</div>
+                </div>
+                <div class="frame-item">
+                    <img src="frames/frame_01.png" alt="Frame 1">
+                    <div class="frame-label">Frame 1</div>
+                </div>
+                <div class="frame-item">
+                    <img src="frames/frame_02.png" alt="Frame 2">
+                    <div class="frame-label">Frame 2</div>
+                </div>
+                <div class="frame-item">
+                    <img src="frames/frame_03.png" alt="Frame 3">
+                    <div class="frame-label">Frame 3</div>
+                </div>
+                <div class="frame-item">
+                    <img src="frames/frame_04.png" alt="Frame 4">
+                    <div class="frame-label">Frame 4</div>
+                </div>
+                <div class="frame-item">
+                    <img src="frames/frame_05.png" alt="Frame 5">
+                    <div class="frame-label">Frame 5</div>
+                </div>
+                <div class="frame-item">
+                    <img src="frames/frame_06.png" alt="Frame 6">
+                    <div class="frame-label">Frame 6</div>
+                </div>
+                <div class="frame-item">
+                    <img src="frames/frame_07.png" alt="Frame 7">
+                    <div class="frame-label">Frame 7</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tips">
+            <h3>💡 Usage Tips</h3>
+            <ul>
+                <li><strong>All animations loop infinitely</strong> - Perfect for game character idle/walk cycles</li>
+                <li><strong>Transparent backgrounds</strong> - Ready to composite on any background</li>
+                <li><strong>Individual frames available</strong> - Use in any game engine that needs separate frame files</li>
+                <li><strong>Pixel-perfect rendering</strong> - Crisp edges maintained for pixel art style</li>
+                <li><strong>Download any GIF</strong> - Right-click on any animation above to save</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>
