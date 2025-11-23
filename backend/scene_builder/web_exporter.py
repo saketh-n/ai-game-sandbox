@@ -290,6 +290,10 @@ class WebGameExporter:
                 <span class="key">R</span>
                 <div class="description">Reset Position</div>
             </div>
+            <div class="control-item">
+                <span class="key">ESC</span>
+                <div class="description">Restart Game (Level 1)</div>
+            </div>
         </div>
         <div class="stats" id="stats">
             Position: (0, 0) | Velocity: (0, 0) | On Ground: No | Jumps: 0/2
@@ -375,6 +379,33 @@ class WebGameExporter:
             }}
 
             create() {{
+                // Initialize global game state for difficulty tracking
+                // Reset to level 1 if this is a fresh game load (detected by checking if scene is truly new)
+                if (!window.gameState || !this.scene.key) {{
+                    window.gameState = {{
+                        level: 1,
+                        gravityMultiplier: 1.0,
+                        speedMultiplier: 1.0,
+                        jumpMultiplier: 1.0,
+                        gameId: Date.now()  // Unique ID for this game session
+                    }};
+                }}
+
+                // Store game ID to detect new game loads
+                if (!this.gameId) {{
+                    this.gameId = window.gameState.gameId;
+                }} else if (this.gameId !== window.gameState.gameId) {{
+                    // New game detected - reset everything
+                    window.gameState = {{
+                        level: 1,
+                        gravityMultiplier: 1.0,
+                        speedMultiplier: 1.0,
+                        jumpMultiplier: 1.0,
+                        gameId: Date.now()
+                    }};
+                    this.gameId = window.gameState.gameId;
+                }}
+
                 // Add background
                 this.bg = this.add.image(0, 0, 'background').setOrigin(0, 0);
 
@@ -415,7 +446,10 @@ class WebGameExporter:
 
                 this.player.setBounce(0.1);
                 this.player.setCollideWorldBounds(true);
-                this.player.setGravityY({config['physics']['gravity']});
+
+                // Apply difficulty multiplier to gravity
+                const baseGravity = {config['physics']['gravity']};
+                this.player.setGravityY(baseGravity * window.gameState.gravityMultiplier);
 
                 // Scale player to reasonable size
                 const targetHeight = 100;  // Target height in pixels
@@ -467,10 +501,18 @@ class WebGameExporter:
                     return false;
                 }}, this);
 
-                // Create collectibles
+                // Create collectibles (clear any existing group first)
                 const collectiblePositions = {collectible_positions_json};
+                if (this.collectibles) {{
+                    this.collectibles.clear(true, true);  // Remove all children and destroy them
+                }}
                 this.collectibles = this.physics.add.group();
                 this.collectedCount = 0;
+                this.totalCollectibles = collectiblePositions.length;
+
+                console.log('=== LEVEL START ===');
+                console.log('Collectibles to create:', this.totalCollectibles);
+                console.log('Starting count:', this.collectedCount);
                 
                 if (collectiblePositions.length > 0 && this.collectibleSprites.length > 0) {{
                     console.log('Creating ' + collectiblePositions.length + ' collectibles...');
@@ -545,6 +587,7 @@ class WebGameExporter:
                 this.cursors = this.input.keyboard.createCursorKeys();
                 this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
                 this.resetKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+                this.restartGameKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
 
                 // Jump tracking
                 this.jumpsRemaining = {config['player']['max_jumps']};
@@ -562,21 +605,40 @@ class WebGameExporter:
                 // Spawn position
                 this.spawnX = {config['character']['spawn_x']};
                 this.spawnY = {config['character']['spawn_y']};
+
+                // Store base values for difficulty scaling
+                this.baseWalkSpeed = {config['player']['walk_speed']};
+                this.baseJumpVelocity = {config['player']['jump_velocity']};
+
+                // Win state tracking
+                this.hasWon = false;
             }}
 
             collectItem(player, collectible) {{
+                // Don't collect if already won or if collectible is already being collected
+                if (this.hasWon || !collectible.active) {{
+                    return;
+                }}
+
+                // Mark as inactive immediately to prevent double collection
+                collectible.active = false;
+
                 // Get sprite index from collectible data
                 const spriteIndex = collectible.getData('spriteIndex');
-                
+
                 // Get metadata for this collectible
                 const metadata = this.collectibleMetadata[spriteIndex];
                 const name = metadata ? metadata.name : 'Collectible';
                 const statusEffect = metadata ? metadata.status_effect : 'Mystery Effect';
                 const description = metadata ? metadata.description : 'You found something!';
-                
+
                 // Display notification
                 this.showCollectibleNotification(name, statusEffect, description);
-                
+
+                // Increment count immediately
+                this.collectedCount++;
+                console.log('Collected "' + name + '" (' + statusEffect + ')! Total: ' + this.collectedCount + '/' + this.totalCollectibles);
+
                 // Visual feedback - scale up then disappear
                 this.tweens.add({{
                     targets: collectible,
@@ -585,9 +647,53 @@ class WebGameExporter:
                     duration: 200,
                     onComplete: () => {{
                         collectible.destroy();
-                        this.collectedCount++;
-                        console.log('Collected "' + name + '" (' + statusEffect + ')! Total: ' + this.collectedCount);
+
+                        // Check for win condition (only if there are collectibles AND we actually collected them all)
+                        if (this.totalCollectibles > 0 &&
+                            this.collectedCount > 0 &&
+                            this.collectedCount >= this.totalCollectibles &&
+                            !this.hasWon) {{
+                            this.hasWon = true;
+                            this.handleWin();
+                        }}
                     }}
+                }});
+            }}
+
+            handleWin() {{
+                console.log('=== YOU WIN! ===');
+                console.log('Final score:', this.collectedCount, '/', this.totalCollectibles);
+
+                // Disable player input during win sequence
+                this.cursors.left.enabled = false;
+                this.cursors.right.enabled = false;
+                this.spaceKey.enabled = false;
+                this.player.setVelocityX(0);
+
+                // Show win notification
+                this.showGameNotification('🎉 YOU WIN! 🎉<br>Level ' + window.gameState.level + ' Complete!<br>Get ready for Level ' + (window.gameState.level + 1) + '...', 4000);
+
+                // Increase difficulty
+                window.gameState.level++;
+                window.gameState.gravityMultiplier += 0.15;  // 15% more gravity each level
+                window.gameState.speedMultiplier -= 0.08;    // 8% slower movement each level
+                window.gameState.jumpMultiplier -= 0.08;      // 8% weaker jumps each level
+
+                // Prevent negative multipliers
+                if (window.gameState.speedMultiplier < 0.4) window.gameState.speedMultiplier = 0.4;
+                if (window.gameState.jumpMultiplier < 0.4) window.gameState.jumpMultiplier = 0.4;
+
+                console.log('New difficulty:', window.gameState);
+
+                // Clean up collectibles before restart
+                if (this.collectibles) {{
+                    this.collectibles.clear(true, true);
+                }}
+
+                // Restart scene after delay
+                this.time.delayedCall(4000, () => {{
+                    console.log('=== RESTARTING SCENE ===');
+                    this.scene.restart();
                 }});
             }}
 
@@ -616,8 +722,8 @@ class WebGameExporter:
                 // Get notification element
                 const notification = document.getElementById('game-notification');
 
-                // Set text
-                notification.textContent = message;
+                // Set HTML (allows for line breaks and emojis)
+                notification.innerHTML = message;
 
                 // Show notification
                 notification.classList.add('show');
@@ -629,6 +735,21 @@ class WebGameExporter:
             }}
 
             update() {{
+                // Skip update logic if player has won (prevents actions during transition)
+                if (this.hasWon) {{
+                    return;
+                }}
+
+                // Fallback win check (in case collectItem callback didn't fire)
+                if (this.totalCollectibles > 0 &&
+                    this.collectedCount > 0 &&
+                    this.collectedCount >= this.totalCollectibles) {{
+                    console.log('WIN DETECTED IN UPDATE LOOP!');
+                    this.hasWon = true;
+                    this.handleWin();
+                    return;
+                }}
+
                 // Check if on ground
                 this.isGrounded = this.player.body.touching.down;
 
@@ -648,13 +769,14 @@ class WebGameExporter:
                     this.jumpsRemaining = {config['player']['max_jumps']};
                 }}
 
-                // Movement
+                // Movement (with difficulty scaling)
+                const currentWalkSpeed = this.baseWalkSpeed * window.gameState.speedMultiplier;
                 if (this.cursors.left.isDown) {{
-                    this.player.setVelocityX(-{config['player']['walk_speed']});
+                    this.player.setVelocityX(-currentWalkSpeed);
                     this.player.setFlipX(true);
                     this.player.play('walk', true);
                 }} else if (this.cursors.right.isDown) {{
-                    this.player.setVelocityX({config['player']['walk_speed']});
+                    this.player.setVelocityX(currentWalkSpeed);
                     this.player.setFlipX(false);
                     this.player.play('walk', true);
                 }} else {{
@@ -662,10 +784,11 @@ class WebGameExporter:
                     this.player.play('idle', true);
                 }}
 
-                // Jumping (double jump support)
+                // Jumping (double jump support with difficulty scaling)
                 if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {{
                     if (this.jumpsRemaining > 0) {{
-                        this.player.setVelocityY({config['player']['jump_velocity']});
+                        const currentJumpVelocity = this.baseJumpVelocity * window.gameState.jumpMultiplier;
+                        this.player.setVelocityY(currentJumpVelocity);
                         this.jumpsRemaining--;
                     }}
                 }}
@@ -675,6 +798,19 @@ class WebGameExporter:
                     this.player.setPosition(this.spawnX, this.spawnY);
                     this.player.setVelocity(0, 0);
                     this.jumpsRemaining = {config['player']['max_jumps']};
+                }}
+
+                // Restart entire game from Level 1 (ESC key)
+                if (Phaser.Input.Keyboard.JustDown(this.restartGameKey)) {{
+                    console.log('Restarting game from Level 1...');
+                    window.gameState = {{
+                        level: 1,
+                        gravityMultiplier: 1.0,
+                        speedMultiplier: 1.0,
+                        jumpMultiplier: 1.0,
+                        gameId: Date.now()
+                    }};
+                    this.scene.restart();
                 }}
 
                 // Update stats display
@@ -690,8 +826,10 @@ class WebGameExporter:
                     const vy = Math.round(this.player.body.velocity.y);
                     const grounded = this.isGrounded ? 'Yes' : 'No';
                     const jumps = ({config['player']['max_jumps']} - this.jumpsRemaining) + '/' + {config['player']['max_jumps']};
+                    const level = window.gameState.level;
+                    const collectibles = this.collectedCount + '/' + this.totalCollectibles;
 
-                    statsDiv.textContent = `Position: (${{x}}, ${{y}}) | Velocity: (${{vx}}, ${{vy}}) | On Ground: ${{grounded}} | Jumps Used: ${{jumps}}`;
+                    statsDiv.textContent = `Level: ${{level}} | Collectibles: ${{collectibles}} | Position: (${{x}}, ${{y}}) | Velocity: (${{vx}}, ${{vy}}) | On Ground: ${{grounded}} | Jumps Used: ${{jumps}}`;
                 }}
             }}
         }}
