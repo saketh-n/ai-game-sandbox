@@ -8,6 +8,10 @@ interface AssetGeneration {
   prompt: string
   category: string
   groupKey: string
+  style?: string
+  additional_instructions?: string
+  image_size?: string
+  output_format?: string
   status: 'pending' | 'generating' | 'completed' | 'error'
   imageUrl?: string
   error?: string
@@ -29,6 +33,10 @@ const GenerateAssets = () => {
       prompt: sp.prompt,
       category: sp.category,
       groupKey: sp.groupKey,
+      style: sp.style,
+      additional_instructions: sp.additional_instructions,
+      image_size: sp.image_size,
+      output_format: sp.output_format,
       status: 'pending' as const,
     }))
     setAssets(initialAssets)
@@ -46,12 +54,17 @@ const GenerateAssets = () => {
       ))
 
       try {
+        const selectedPrompt = selectedPrompts[index]
         const response = await fetch(`${API_URL}/generate-image-asset`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: asset.prompt,
             category: asset.category,
+            style: selectedPrompt.style || '',
+            additional_instructions: selectedPrompt.additional_instructions || '',
+            image_size: selectedPrompt.image_size || '',
+            output_format: selectedPrompt.output_format || 'png',
           }),
         })
 
@@ -223,9 +236,65 @@ const GenerateAssets = () => {
                         </div>
                       )}
 
-                      {/* Prompt Text */}
-                      <div className="text-purple-100 text-sm leading-relaxed line-clamp-2 font-mono">
-                        {asset.prompt}
+                      {/* Prompt Details - All JSON Fields */}
+                      <div className="space-y-3 mt-3">
+                        {/* Main Prompt */}
+                        <div>
+                          <div className="text-xs font-semibold text-purple-300 uppercase tracking-wide mb-1">
+                            Main Prompt
+                          </div>
+                          <div className="text-purple-100 text-sm leading-relaxed font-mono bg-white/5 p-3 rounded border border-purple-400/20">
+                            {asset.prompt}
+                          </div>
+                        </div>
+
+                        {/* Style */}
+                        {asset.style && (
+                          <div>
+                            <div className="text-xs font-semibold text-blue-300 uppercase tracking-wide mb-1">
+                              Style
+                            </div>
+                            <div className="text-blue-100 text-sm leading-relaxed font-mono bg-blue-500/5 p-3 rounded border border-blue-400/20">
+                              {asset.style}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Additional Instructions */}
+                        {asset.additional_instructions && (
+                          <div>
+                            <div className="text-xs font-semibold text-indigo-300 uppercase tracking-wide mb-1">
+                              Additional Instructions
+                            </div>
+                            <div className="text-indigo-100 text-sm leading-relaxed font-mono bg-indigo-500/5 p-3 rounded border border-indigo-400/20">
+                              {asset.additional_instructions}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Image Size */}
+                        {asset.image_size && (
+                          <div>
+                            <div className="text-xs font-semibold text-green-300 uppercase tracking-wide mb-1">
+                              Image Size
+                            </div>
+                            <div className="text-green-100 text-sm font-mono bg-green-500/5 p-2 rounded border border-green-400/20 inline-block">
+                              {asset.image_size}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Output Format */}
+                        {asset.output_format && (
+                          <div>
+                            <div className="text-xs font-semibold text-orange-300 uppercase tracking-wide mb-1">
+                              Output Format
+                            </div>
+                            <div className="text-orange-100 text-sm font-mono bg-orange-500/5 p-2 rounded border border-orange-400/20 inline-block">
+                              {asset.output_format}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

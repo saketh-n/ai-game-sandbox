@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import traceback
 from typing import List
 import asyncio
+import json
 from cache_manager import cache
 
 # Load environment variables
@@ -74,6 +75,10 @@ class CachedResultResponse(BaseModel):
 class GenerateImageRequest(BaseModel):
     prompt: str = Field(..., description="Image generation prompt")
     category: str = Field(..., description="Asset category")
+    style: str = Field(default="", description="Style specification")
+    additional_instructions: str = Field(default="", description="Additional generation instructions")
+    image_size: str = Field(default="", description="Image size specification")
+    output_format: str = Field(default="png", description="Output format")
 
 class GenerateImageResponse(BaseModel):
     image_url: str
@@ -104,7 +109,7 @@ async def generate_asset_prompts(request: PromptRequest):
     logger.info(f"[{request_id}] Cache miss. Calling Claude API...")
 
     try:
-        claude_prompt = f"""You are a professional game artist assistant. Based on the following video game description, generate image generation prompts for the three core assets needed.
+        claude_prompt = f"""You are a professional game artist assistant. Based on the following video game description, generate a theme and character sprite prompt.
 
         Game Description:
         \"{request.prompt}\"
@@ -112,42 +117,22 @@ async def generate_asset_prompts(request: PromptRequest):
         Return your response as a valid JSON object (no markdown, no ```json blocks, no extra text) with this exact structure:
 
         {{
+        "theme": "A concise theme description (e.g., 'space adventure', 'medieval fantasy', 'cyberpunk city')",
         "main_character": {{
-            "description": "Brief overall description of the protagonist",
-            "variations": [
-            "Detailed prompt for variation 1 -- highly descriptive, include art style, lighting, pose, colors, mood, camera angle, character centered on white background",
-            "Detailed prompt for variation 2...",
-            "Detailed prompt for variation 3..."
-            ]
-        }},
-        "background": {{
-            "description": "Brief description of the game environment/setting",
-            "variations": [
-            "Full scene background prompt 1 -- parallax-ready, atmospheric, detailed, no characters",
-            "Full scene background prompt 2...",
-            "Full scene background prompt 3..."
-            ]
-        }},
-        "collectible_item": {{
-            "description": "Brief description of the collectible/power-up",
-            "variations": [
-            "Detailed item prompt 1 -- centered on white background, clear and visible, isometric or front view",
-            "Detailed item prompt 2...",
-            "Detailed item prompt 3..."
-            ]
+            "prompt": "2D sprite sheet of [CHARACTER] wearing [OUTFIT/GEAR], pixel art style for platformer game. Eight frames of walking animation cycle displayed side by side from left to right. Frame 1: neutral standing pose. Frame 2: left front leg lifting. Frame 3: left front leg fully lifted mid-step. Frame 4: left front leg descending, right front leg preparing. Frame 5: both front legs planted transition. Frame 6: right front leg lifting. Frame 7: right front leg fully lifted mid-step. Frame 8: right front leg descending, completing full walk cycle. Consistent character design across all frames with clear distinct poses. Clean white background, retro game sprite aesthetic, sharp pixel details, [COLOR AND VISUAL DETAILS]",
+            "style": "pixel art sprite sheet, 2D platformer game graphics, retro gaming aesthetic",
+            "additional_instructions": "Ensure perfect consistency in character design across all eight frames. Each frame should show clear progression of complete walking cycle with distinct leg positions. Frames arranged horizontally in sequence. Clean separation between frames. Wide horizontal composition to fit all 8 frames."
         }}
         }}
 
         Rules:
         - Output ONLY the raw JSON. No explanations, no markdown, no trailing text.
-        - Every prompt must be highly detailed and optimized for Stable Diffusion / Flux / Midjourney.
-        - Include art style, lighting, composition, color palette, mood, and camera perspective.
-        - Use double quotes for all JSON keys and strings.
-        - Do not escape newlines inside strings — keep prompts readable.
-        - Generate exactly 3 variations for each asset type.
-        - For main character and collectible: ensure white/clean background for easy sprite extraction.
-        - For background: focus on environment only, no characters.
-        - Be creative and consistent with the game theme."""
+        - Include a "theme" field with a concise theme description.
+        - Include ONLY the "main_character" field with ONE character sprite prompt.
+        - For main_character: MUST include detailed 8-frame walking animation cycle description.
+        - Replace bracketed placeholders with theme-appropriate content based on the game description.
+        - Be creative and detailed with character design.
+        - Use double quotes for all JSON keys and strings."""
 
         logger.info(f"[{request_id}] Calling Claude 4.5 Sonnet...")
 
@@ -172,11 +157,68 @@ async def generate_asset_prompts(request: PromptRequest):
 
         logger.success(f"[{request_id}] Successfully generated asset prompts ({len(response_text)} chars)")
 
+        # Auto-detect and remove markdown code fences if present
+        if response_text.startswith("```"):
+            logger.info(f"[{request_id}] Detected markdown code fences, removing...")
+            # Remove ```json or ``` at start and ``` at end
+            lines = response_text.split('\n')
+            if lines[0].startswith("```"):
+                lines = lines[1:]  # Remove first line with ```json
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]  # Remove last line with ```
+            response_text = '\n'.join(lines).strip()
+            logger.info(f"[{request_id}] Code fences removed")
+
+        # Parse the Claude response
+        try:
+            claude_data = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            logger.error(f"[{request_id}] Failed to parse Claude JSON response: {str(e)}")
+            logger.error(f"[{request_id}] Response text: {response_text}")
+            raise ValueError(f"Invalid JSON from Claude: {str(e)}")
+
+        # Extract theme and main character
+        theme = claude_data.get("theme", "")
+        main_character = claude_data.get("main_character", {})
+
+        # Create background and collectible prompts with theme interpolation
+        background_prompt = {
+            "prompt": f"Generate a 2d platformer background with the following {theme}, 8-bit graphics",
+            "image_size": "landscape_4_3",
+            "output_format": "png"
+        }
+
+        collectible_prompt = {
+            "prompt": f"Create a sprite sheet of collectible items in the style of an 8-bit retro video game with a white background with the following {theme}",
+            "style": "8-bit retro pixel art",
+            "output_format": "png"
+        }
+
+        # Build final response structure
+        final_response = {
+            "theme": theme,
+            "main_character": {
+                "description": f"Main character for {theme}",
+                "variations": [main_character]
+            },
+            "background": {
+                "description": f"Background for {theme}",
+                "variations": [background_prompt]
+            },
+            "collectible_item": {
+                "description": f"Collectible items for {theme}",
+                "variations": [collectible_prompt]
+            }
+        }
+
+        # Convert back to JSON string for caching and response
+        final_json = json.dumps(final_response, indent=2)
+
         # Cache the result
-        cache.set(request.prompt, response_text)
+        cache.set(request.prompt, final_json)
         logger.info(f"[{request_id}] Result cached for future requests")
 
-        return PromptResponse(result=response_text, cached=False)
+        return PromptResponse(result=final_json, cached=False)
 
     # === Specific Anthropic Errors ===
     except AuthenticationError as e:

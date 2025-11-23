@@ -1,17 +1,35 @@
 import { createContext, useContext, useState, ReactNode } from 'react'
 
+interface MainCharacterVariation {
+  prompt: string
+  style: string
+  additional_instructions: string
+}
+
+interface BackgroundVariation {
+  prompt: string
+  image_size: string
+  output_format: string
+}
+
+interface CollectibleVariation {
+  prompt: string
+  style: string
+  output_format: string
+}
+
 export interface AssetData {
   main_character?: {
     description?: string
-    variations: string[]
+    variations: MainCharacterVariation[]
   }
   background?: {
     description?: string
-    variations: string[]
+    variations: BackgroundVariation[]
   }
   collectible_item?: {
     description?: string
-    variations: string[]
+    variations: CollectibleVariation[]
   }
 }
 
@@ -19,6 +37,10 @@ export interface SelectedPrompt {
   category: string
   groupKey: string
   prompt: string
+  style?: string
+  additional_instructions?: string
+  image_size?: string
+  output_format?: string
 }
 
 interface AssetContextType {

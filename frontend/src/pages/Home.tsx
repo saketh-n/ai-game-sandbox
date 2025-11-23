@@ -47,6 +47,29 @@ const Home = () => {
     }
   }
 
+  const clearCache = async () => {
+    if (!window.confirm('Are you sure you want to clear all cached prompts?')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/cache`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        setCachedPrompts([])
+        setShowCachedPrompts(false)
+        alert('Cache cleared successfully!')
+      } else {
+        alert('Failed to clear cache')
+      }
+    } catch (err) {
+      console.error('Failed to clear cache:', err)
+      alert('Error clearing cache')
+    }
+  }
+
   const loadCachedPrompt = async (cachedPrompt: string) => {
     setIsLoading(true)
     setError('')
@@ -148,6 +171,7 @@ const Home = () => {
             showCachedPrompts={showCachedPrompts}
             onToggle={() => setShowCachedPrompts(!showCachedPrompts)}
             onSelectPrompt={loadCachedPrompt}
+            onClearCache={clearCache}
           />
 
           <PromptInput
