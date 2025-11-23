@@ -1,0 +1,32 @@
+{
+  "71f54eece9a5ff5c09a678c8c96d1bda": {
+    "image_url": "https://v3b.fal.media/files/b/tiger/T5k81zYm2pYZOaiA5_DUh.png",
+    "prompt": "2D sprite sheet of a lone samurai warrior wearing traditional dark blue hakama pants and light gray kimono top with a katana sheathed at the waist, pixel art style for platformer game. Eight frames of",
+    "category": "Main Character",
+    "timestamp": "2025-11-22T20:15:59.490780",
+    "style": "pixel art sprite sheet, 2D platformer game graphics, retro gaming aesthetic",
+    "additional_instructions": "Ensure perfect consistency in character design across all eight frames. Each frame should show clear progression of complete walking cycle with distinct leg positions. Frames arranged horizontally in ",
+    "image_size": "",
+    "output_format": "png"
+  },
+  "d639f5b13626386116230c7aff04ebde": {
+    "image_url": "https://v3b.fal.media/files/b/penguin/VrmwZjK7HDsX2NNogn31-.png",
+    "prompt": "Generate a 2d platformer background with the following feudal Japan samurai adventure, 8-bit graphics",
+    "category": "Background",
+    "timestamp": "2025-11-22T20:16:15.301912",
+    "style": "",
+    "additional_instructions": "",
+    "image_size": "landscape_4_3",
+    "output_format": "png"
+  },
+  "45dd208237bf562946dbdc5ff767e47b": {
+    "image_url": "https://v3b.fal.media/files/b/elephant/IACeg0dgAHQ9-TnFdSzIz.png",
+    "prompt": "Create a sprite sheet of collectible items in the style of an 8-bit retro video game with a white background with the following feudal Japan samurai adventure",
+    "category": "Collectible Item",
+    "timestamp": "2025-11-22T20:16:30.657897",
+    "style": "8-bit retro pixel art",
+    "additional_instructions": "",
+    "image_size": "",
+    "output_format": "png"
+  }
+}

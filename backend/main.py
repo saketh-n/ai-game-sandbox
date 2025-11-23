@@ -10,6 +10,7 @@ from typing import List
 import asyncio
 import json
 from cache_manager import cache
+from image_cache_manager import image_cache
 
 from image_generation.generator import ImageGenerator
 from image_generation.config import ImageGenerationConfig
@@ -87,6 +88,7 @@ class GenerateImageResponse(BaseModel):
     image_url: str
     prompt: str
     category: str
+    cached: bool = False
 
 image_generator = ImageGenerator(api_key=os.getenv("FAL_KEY"))
 
@@ -367,35 +369,83 @@ async def clear_cache():
         ) from e
 
 
+@app.delete("/image-cache")
+async def clear_image_cache():
+    """
+    Clear all cached images.
+    """
+    try:
+        image_cache.clear()
+        logger.info("Image cache cleared successfully")
+        return {"message": "Image cache cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing image cache: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear image cache"
+        ) from e
+
+
 @app.post("/generate-image-asset", response_model=GenerateImageResponse, status_code=status.HTTP_200_OK)
 async def generate_image_asset(request: GenerateImageRequest):
     """
     Generate an image asset from a prompt. 
-    Currently a dummy implementation with 30-second timeout that returns a placeholder image.
+    Checks cache first and returns cached image URL if available.
     """
     request_id = f"img_{os.urandom(4).hex()}"
     logger.info(f"[{request_id}] Image generation request for category: {request.category}")
     logger.info(f"[{request_id}] Prompt: {request.prompt[:100]}...")
 
-    image_generator_response = image_generator.generate(
-        config=ImageGenerationConfig(
-            model_name="fal-ai/alpha-image-232/text-to-image",
-            prompt=request.prompt
+    # Check cache first
+    cached_url = image_cache.get(
+        prompt=request.prompt,
+        category=request.category,
+        style=request.style,
+        additional_instructions=request.additional_instructions,
+        image_size=request.image_size,
+        output_format=request.output_format
+    )
+    
+    if cached_url:
+        logger.info(f"[{request_id}] Returning cached image URL")
+        return GenerateImageResponse(
+            image_url=cached_url,
+            prompt=request.prompt,
+            category=request.category,
+            cached=True
         )
-    ) 
+
+    # Generate new image
+    logger.info(f"[{request_id}] No cache found, generating new image...")
     
     try:
-        # Return a placeholder image URL (using picsum.photos for demo)
-        # Different seed based on category for variety
-        category_seed = abs(hash(request.category)) % 1000
+        image_generator_response = image_generator.generate(
+            config=ImageGenerationConfig(
+                model_name="fal-ai/alpha-image-232/text-to-image",
+                prompt=request.prompt
+            )
+        ) 
+        
         image_url = image_generator_response['images'][0]['url']
         
         logger.info(f"[{request_id}] Image generated successfully: {image_url}")
         
+        # Cache the result
+        image_cache.set(
+            prompt=request.prompt,
+            category=request.category,
+            image_url=image_url,
+            style=request.style,
+            additional_instructions=request.additional_instructions,
+            image_size=request.image_size,
+            output_format=request.output_format
+        )
+        
         return GenerateImageResponse(
             image_url=image_url,
             prompt=request.prompt,
-            category=request.category
+            category=request.category,
+            cached=False
         )
     
     except Exception as e:
