@@ -45,6 +45,19 @@ const AssetPromptsDisplay: React.FC<AssetPromptsDisplayProps> = ({ data, origina
       })
     }
     
+    // Collect mob/enemy character
+    if (data.mob && data.mob.variations.length > 0) {
+      const variation = data.mob.variations[0]
+      const promptKey = 'mob-0'
+      selectedPrompts.push({
+        category: 'Mob/Enemy',
+        groupKey: 'mob',
+        prompt: getPromptValue(`${promptKey}-prompt`, variation.prompt),
+        style: getPromptValue(`${promptKey}-style`, variation.style),
+        additional_instructions: getPromptValue(`${promptKey}-additional_instructions`, variation.additional_instructions),
+      })
+    }
+    
     // Collect background
     if (data.background && data.background.variations.length > 0) {
       const variation = data.background.variations[0]
@@ -247,6 +260,25 @@ const AssetPromptsDisplay: React.FC<AssetPromptsDisplayProps> = ({ data, origina
           <div className="space-y-2">
             {data.main_character.variations.map((variation, index) =>
               renderEditablePrompt(variation, `main-character-${index}`, index)
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Mob/Enemy Section */}
+      {data.mob && renderCollapsibleSection(
+        '👾 Mob/Enemy Character',
+        'mob',
+        <div>
+          {data.mob.description && (
+            <div className="mb-4 p-3 bg-red-500/10 rounded-lg border border-red-500/20">
+              <span className="text-sm font-medium text-red-300">Description:</span>
+              <p className="text-red-100 text-sm mt-1">{data.mob.description}</p>
+            </div>
+          )}
+          <div className="space-y-2">
+            {data.mob.variations.map((variation, index) =>
+              renderEditablePrompt(variation, `mob-${index}`, index)
             )}
           </div>
         </div>
