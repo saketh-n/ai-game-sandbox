@@ -15,6 +15,7 @@ import httpx
 from pathlib import Path
 from cache_manager import cache
 from image_cache_manager import image_cache
+from game_cache_manager import game_cache
 
 from image_generation.generator import ImageGenerator
 from image_generation.config import ImageGenerationConfig
@@ -938,6 +939,39 @@ async def generate_game(request: GenerateGameRequest):
     logger.info(f"[{request_id}] Character URL: {request.character_url}")
     logger.info(f"[{request_id}] Frames: {request.num_frames}, Name: {request.game_name}")
 
+    # Check cache first
+    cached_game = game_cache.get_cached_game(
+        background_url=request.background_url,
+        character_url=request.character_url,
+        mob_url=request.mob_url,
+        collectible_url=request.collectible_url,
+        num_frames=request.num_frames
+    )
+    
+    if cached_game:
+        logger.success(f"[{request_id}] Cache hit! Returning cached game")
+        logger.info(f"[{request_id}] Cache key: {cached_game['cache_key']}")
+        logger.info(f"[{request_id}] Cached at: {cached_game.get('cached_at', 'unknown')}")
+        
+        # Extract data from cache
+        scene_config = cached_game['scene_config']
+        platforms_detected = len(scene_config['physics']['platforms'])
+        gaps_detected = len(scene_config['analysis'].get('gaps', []))
+        spawn_point = scene_config['analysis']['spawn']
+        
+        return GenerateGameResponse(
+            game_html=cached_game['game_html'],
+            scene_config=scene_config,
+            platforms_detected=platforms_detected,
+            gaps_detected=gaps_detected,
+            spawn_point=spawn_point,
+            debug_frames=cached_game.get('debug_frames', []),
+            debug_platforms="",  # Platform debug image not cached currently
+            debug_collectibles=cached_game.get('debug_collectibles', [])
+        )
+    
+    logger.info(f"[{request_id}] Cache miss. Generating new game...")
+
     # Create temporary directory for downloads and generation
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -1109,6 +1143,28 @@ async def generate_game(request: GenerateGameRequest):
                         "description": metadata.get("description", "")
                     })
             
+            # Save to cache for future requests
+            logger.info(f"[{request_id}] Caching game for future requests...")
+            try:
+                game_cache.save_game(
+                    background_url=request.background_url,
+                    character_url=request.character_url,
+                    mob_url=request.mob_url,
+                    collectible_url=request.collectible_url,
+                    num_frames=request.num_frames,
+                    game_html=game_html,
+                    scene_config=scene_config,
+                    debug_frames=debug_frames if request.debug_options.get("show_sprite_frames", True) else [],
+                    debug_collectibles=debug_collectibles_data if request.debug_options.get("show_collectibles", True) else [],
+                    platform_analysis=scene_config.get("analysis"),
+                    collectible_metadata=collectible_metadata,
+                    collectible_sprites=collectible_sprites
+                )
+                logger.success(f"[{request_id}] Game cached successfully")
+            except Exception as cache_error:
+                logger.warning(f"[{request_id}] Failed to cache game: {cache_error}")
+                # Don't fail the request if caching fails
+            
             return GenerateGameResponse(
                 game_html=game_html,
                 scene_config=scene_config,
@@ -1152,6 +1208,42 @@ async def generate_game(request: GenerateGameRequest):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=error_msg
             ) from e
+
+
+@app.get("/game-cache/list")
+async def list_cached_games():
+    """List all cached games with metadata"""
+    try:
+        cached_games = game_cache.get_all_cached_games()
+        cache_size = game_cache.get_cache_size()
+        
+        return {
+            "cached_games": cached_games,
+            "total_games": len(cached_games),
+            "cache_size_bytes": cache_size,
+            "cache_size_mb": round(cache_size / (1024 * 1024), 2)
+        }
+    except Exception as e:
+        logger.error(f"Error listing cached games: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list cached games: {str(e)}"
+        ) from e
+
+
+@app.delete("/game-cache")
+async def clear_game_cache():
+    """Clear all cached games"""
+    try:
+        game_cache.clear_cache()
+        logger.info("Game cache cleared by API request")
+        return {"message": "Game cache cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing game cache: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear game cache"
+        ) from e
 
 
 if __name__ == "__main__":
