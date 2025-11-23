@@ -334,8 +334,28 @@ class WebGameExporter:
                     repeat: -1
                 }});
 
-                // Add collider
-                this.physics.add.collider(this.player, this.platforms);
+                // Add one-way platform collider (jump through from below, land on top)
+                this.physics.add.collider(this.player, this.platforms, null, (player, platform) => {{
+                    // Allow jumping through platforms from below
+                    // Only collide if player is falling/standing (velocity.y >= 0)
+                    // AND player's bottom is at or above platform's top
+                    const playerBottom = player.body.y + player.body.height;
+                    const platformTop = platform.body.y;
+
+                    // If player is jumping upward (negative velocity), allow pass-through
+                    if (player.body.velocity.y < 0) {{
+                        return false;  // No collision - pass through
+                    }}
+
+                    // If player's bottom is above the platform top, allow collision
+                    // (with small tolerance for smooth landing)
+                    if (playerBottom <= platformTop + 10) {{
+                        return true;  // Collide - player lands on platform
+                    }}
+
+                    // Otherwise no collision (player is inside/below platform)
+                    return false;
+                }}, this);
 
                 // Set up controls
                 this.cursors = this.input.keyboard.createCursorKeys();
