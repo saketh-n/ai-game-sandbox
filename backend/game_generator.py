@@ -105,13 +105,22 @@ A platform MUST have these characteristics:
 WHAT TO EXCLUDE (NOT walkable):
 ═══════════════════════════════════════════════════════════
 
-❌ **Trees**: Vertical objects with trunks - they SIT ON platforms, not ARE platforms
-❌ **Plants/Vegetation**: Grass tufts, flowers, mushrooms - decorations ON platforms
 ❌ **Clouds**: In the sky, ethereal, not solid
 ❌ **Water**: Lakes, ponds - typically at bottom, blue/transparent
-❌ **Fences/Barriers**: Vertical obstacles that block movement
-❌ **Collectibles**: Coins, gems, power-ups - small decorative items
 ❌ **Sky/Background**: Air, distant mountains, clouds
+
+IMPORTANT - DECORATIONS ARE COSMETIC:
+═══════════════════════════════════════════════════════════
+
+✓ **DETECT ALL PLATFORMS** even if they have decorative elements on them!
+✓ **Trees, plants, flowers, grass tufts** - These are cosmetic and players walk THROUGH them
+✓ **Fences, barriers, collectibles** - These are cosmetic overlays on platforms
+✓ **Any decorative doodads** - Focus on the GROUND/PLATFORM beneath them
+
+When you see trees or decorations:
+- STILL detect the platform underneath them
+- The platform Y is at the BASE of the decoration (where it touches the ground)
+- Players can walk through decorative elements - they're just visual flavor!
 
 ═══════════════════════════════════════════════════════════
 BOUNDING BOX PRECISION RULES:
@@ -139,9 +148,11 @@ SPAWN POINT SELECTION:
 
 Choose a spawn point that is:
 - ON a large, stable platform (not a tiny ledge)
-- Near the left or center of the level
+- Near the left or center of the level HORIZONTALLY
+- In the UPPER HALF or MIDDLE of the scene VERTICALLY (prefer lower Y values = higher on screen)
 - ABOVE the platform surface (not inside it!)
-  → If platform top is at Y=740, spawn should be Y=700 (40px above)
+  → If platform top is at Y=400, spawn should be Y=360 (40px above)
+  → Prefer platforms with lower Y coordinates for better level visibility
 - Not near level edges or dangerous gaps
 
 ═══════════════════════════════════════════════════════════
@@ -914,11 +925,11 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
         # Spawn point is NOT on a platform - need to fix it!
         print(f"  ⚠️  WARNING: Spawn point ({spawn_x}, {spawn_y}) is NOT on any platform!")
 
-        # Find the largest, most stable platform (prefer bottom platforms)
-        # Sort by: 1) Y position (bottom first), 2) Width (larger first)
+        # Find the largest, most stable platform (prefer higher platforms for better visibility)
+        # Sort by: 1) Y position (higher on screen first = lower Y values), 2) Width (larger first)
         sorted_platforms = sorted(
             platforms,
-            key=lambda p: (-p['y'], -p['width'])  # Negative for descending order
+            key=lambda p: (p['y'], -p['width'])  # Lower Y first (higher on screen), then larger width
         )
 
         best_platform = sorted_platforms[0]

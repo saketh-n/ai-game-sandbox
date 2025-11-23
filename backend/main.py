@@ -1022,7 +1022,7 @@ async def generate_game(request: GenerateGameRequest):
                 logger.info(f"[{request_id}] Generating collectible positions on platforms...")
                 collectible_positions = generate_collectible_positions(
                     platforms=scene_config["physics"]["platforms"],
-                    num_collectibles=min(15, len(scene_config["physics"]["platforms"]) * 2)
+                    num_collectibles=min(15, max(8, len(scene_config["physics"]["platforms"]) * 3))
                 )
                 # Clamp sprite indices to actual sprite count
                 for pos in collectible_positions:
