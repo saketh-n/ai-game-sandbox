@@ -260,7 +260,7 @@ IMPORTANT:
         return []
 
 
-def segment_collectible_sprites(collectible_path: Path, sprite_analyzer) -> List[str]:
+def segment_collectible_sprites(collectible_path: Path, sprite_analyzer, expected_count: int = None) -> List[str]:
     """
     Segment collectible sprite sheet into individual sprites using the same method as character sprites.
     
@@ -284,12 +284,23 @@ def segment_collectible_sprites(collectible_path: Path, sprite_analyzer) -> List
     
     logger.info(f"Segmenting collectible sprites from: {collectible_path}")
     
-    # STEP 1: Analyze sprite sheet layout using Claude Vision
-    logger.info("  Analyzing collectible layout with Claude Vision...")
-    layout_info = sprite_analyzer.analyze_sprite_sheet_layout(collectible_path)
-    
-    logger.info(f"  Layout: {layout_info['layout_type']} ({layout_info['rows']}×{layout_info['columns']})")
-    logger.info(f"  Total collectibles: {layout_info['total_frames']}")
+    # STEP 1: Analyze sprite sheet layout using Claude Vision (or use provided count)
+    if expected_count:
+        logger.info(f"  Using provided expected count: {expected_count} collectibles")
+        # Create a simplified layout_info based on expected count
+        layout_info = {
+            'layout_type': 'horizontal',
+            'rows': 1,
+            'columns': expected_count,
+            'total_frames': expected_count,
+            'frame_width': 128,  # Will be recalculated during extraction
+            'frame_height': 128
+        }
+    else:
+        logger.info("  Analyzing collectible layout with Claude Vision...")
+        layout_info = sprite_analyzer.analyze_sprite_sheet_layout(collectible_path)
+        logger.info(f"  Layout: {layout_info['layout_type']} ({layout_info['rows']}×{layout_info['columns']})")
+        logger.info(f"  Total collectibles: {layout_info['total_frames']}")
     
     # STEP 2: Remove background (assume white background)
     logger.info("  Removing background from collectible sheet...")
@@ -942,7 +953,8 @@ async def generate_game(request: GenerateGameRequest):
                 collectible_sprites = await asyncio.to_thread(
                     segment_collectible_sprites,
                     coll_path,
-                    game_gen.sprite_analyzer  # Pass the sprite analyzer
+                    game_gen.sprite_analyzer,  # Pass the sprite analyzer
+                    len(collectible_metadata)  # Pass expected count from metadata
                 )
                 logger.info(f"[{request_id}] Segmented {len(collectible_sprites)} collectible sprites")
                 
