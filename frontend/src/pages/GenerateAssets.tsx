@@ -20,7 +20,7 @@ interface AssetGeneration {
 
 const GenerateAssets = () => {
   const navigate = useNavigate()
-  const { selectedPrompts } = useAssetContext()
+  const { selectedPrompts, setGeneratedImages } = useAssetContext()
   const [assets, setAssets] = useState<AssetGeneration[]>([])
 
   useEffect(() => {
@@ -130,6 +130,18 @@ const GenerateAssets = () => {
   const completedCount = assets.filter(a => a.status === 'completed').length
   const generatingCount = assets.filter(a => a.status === 'generating').length
   const errorCount = assets.filter(a => a.status === 'error').length
+  const allCompleted = assets.length > 0 && completedCount === assets.length
+
+  const handleGenerateSandbox = () => {
+    // Save the generated image URLs to context
+    const imageUrls = {
+      mainCharacter: assets.find(a => a.groupKey === 'main-character')?.imageUrl,
+      background: assets.find(a => a.groupKey === 'background')?.imageUrl,
+      collectible: assets.find(a => a.groupKey === 'collectible-item')?.imageUrl,
+    }
+    setGeneratedImages(imageUrls)
+    navigate('/game-sandbox')
+  }
 
   if (selectedPrompts.length === 0) {
     return null
@@ -379,6 +391,22 @@ const GenerateAssets = () => {
                 </div>
               </div>
             </div>
+
+            {/* Generate Sandbox Button - Only show when all complete */}
+            {allCompleted && (
+              <div className="mt-6">
+                <button
+                  onClick={handleGenerateSandbox}
+                  className="w-full px-6 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-semibold text-lg rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-3"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Generate Game Sandbox</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

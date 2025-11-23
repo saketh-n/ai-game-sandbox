@@ -43,6 +43,12 @@ export interface SelectedPrompt {
   output_format?: string
 }
 
+export interface GeneratedAssetImages {
+  mainCharacter?: string
+  background?: string
+  collectible?: string
+}
+
 interface AssetContextType {
   assetData: AssetData | null
   setAssetData: (data: AssetData | null) => void
@@ -50,6 +56,8 @@ interface AssetContextType {
   setSelectedPrompts: (prompts: SelectedPrompt[]) => void
   originalTheme: string
   setOriginalTheme: (theme: string) => void
+  generatedImages: GeneratedAssetImages
+  setGeneratedImages: (images: GeneratedAssetImages) => void
 }
 
 const AssetContext = createContext<AssetContextType | undefined>(undefined)
@@ -58,6 +66,7 @@ export const AssetProvider = ({ children }: { children: ReactNode }) => {
   const [assetData, setAssetData] = useState<AssetData | null>(null)
   const [selectedPrompts, setSelectedPrompts] = useState<SelectedPrompt[]>([])
   const [originalTheme, setOriginalTheme] = useState('')
+  const [generatedImages, setGeneratedImages] = useState<GeneratedAssetImages>({})
 
   return (
     <AssetContext.Provider
@@ -68,6 +77,8 @@ export const AssetProvider = ({ children }: { children: ReactNode }) => {
         setSelectedPrompts,
         originalTheme,
         setOriginalTheme,
+        generatedImages,
+        setGeneratedImages,
       }}
     >
       {children}
