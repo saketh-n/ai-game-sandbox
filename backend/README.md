@@ -171,8 +171,41 @@ uv run uvicorn main:app --reload
 **API Endpoints:**
 - `POST /generate-asset-prompts` - Generate game asset prompts using Claude
 - `POST /generate-image-asset` - Generate images from prompts
+- `POST /generate-game` - **Generate complete playable HTML5 game from image URLs**
 - `GET /cached-prompts` - List cached prompts
 - `POST /fetch-cached-prompt` - Fetch specific cached result
+
+### Generate Game Endpoint
+
+The `/generate-game` endpoint creates a complete playable HTML5 platformer from image URLs:
+
+**Request:**
+```json
+{
+  "background_url": "https://example.com/background.png",
+  "character_url": "https://example.com/character_sprite.png",
+  "num_frames": 8,
+  "game_name": "MyPlatformer"
+}
+```
+
+**Response:**
+```json
+{
+  "game_html": "<html>...complete game HTML...</html>",
+  "scene_config": {...},
+  "platforms_detected": 7,
+  "gaps_detected": 5,
+  "spawn_point": {"x": 100, "y": 625}
+}
+```
+
+**What it does:**
+1. Downloads background and character sprite from provided URLs
+2. Uses Claude Vision API to detect walkable platforms
+3. Removes sprite background and processes frames
+4. Generates complete Phaser.js HTML5 game
+5. Returns game HTML that can be embedded or saved
 
 ## Environment Variables
 

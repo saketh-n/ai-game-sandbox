@@ -1,19 +1,24 @@
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 from anthropic import Anthropic, APIStatusError, APIConnectionError, AuthenticationError, RateLimitError
 from loguru import logger
 import os
 from dotenv import load_dotenv
 import traceback
-from typing import List
+from typing import List, Optional
 import asyncio
 import json
+import tempfile
+import httpx
+from pathlib import Path
 from cache_manager import cache
 from image_cache_manager import image_cache
 
 from image_generation.generator import ImageGenerator
 from image_generation.config import ImageGenerationConfig
+from game_generator import GameGenerator
 
 # Load environment variables
 load_dotenv()
@@ -90,6 +95,19 @@ class GenerateImageResponse(BaseModel):
     prompt: str
     category: str
     cached: bool = False
+
+class GenerateGameRequest(BaseModel):
+    background_url: str = Field(..., description="URL to background image")
+    character_url: str = Field(..., description="URL to character sprite sheet")
+    num_frames: int = Field(default=8, description="Number of animation frames in sprite sheet")
+    game_name: str = Field(default="GeneratedGame", description="Name for the generated game")
+
+class GenerateGameResponse(BaseModel):
+    game_html: str = Field(..., description="Complete HTML game code")
+    scene_config: dict = Field(..., description="Game scene configuration")
+    platforms_detected: int = Field(..., description="Number of platforms detected by AI")
+    gaps_detected: int = Field(..., description="Number of gaps detected")
+    spawn_point: dict = Field(..., description="Character spawn coordinates")
 
 image_generator = ImageGenerator(api_key=os.getenv("FAL_KEY"))
 
@@ -460,6 +478,118 @@ async def generate_image_asset(request: GenerateImageRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate image: {str(e)}"
         ) from e
+
+
+@app.post("/generate-game", response_model=GenerateGameResponse, status_code=status.HTTP_200_OK)
+async def generate_game(request: GenerateGameRequest):
+    """
+    Generate a complete playable HTML5 platformer game from asset URLs.
+
+    This endpoint:
+    1. Downloads background and character sprite images from provided URLs
+    2. Uses Claude Vision API to detect walkable platforms in the background
+    3. Processes character sprite (removes background, detects frames)
+    4. Generates a complete Phaser.js HTML5 game
+
+    Returns the game HTML and configuration details.
+    """
+    request_id = f"game_{os.urandom(4).hex()}"
+    logger.info(f"[{request_id}] Game generation request")
+    logger.info(f"[{request_id}] Background URL: {request.background_url}")
+    logger.info(f"[{request_id}] Character URL: {request.character_url}")
+    logger.info(f"[{request_id}] Frames: {request.num_frames}, Name: {request.game_name}")
+
+    # Create temporary directory for downloads and generation
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        try:
+            # Download background image for analysis
+            logger.info(f"[{request_id}] Downloading background image for analysis...")
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                bg_response = await client.get(request.background_url)
+                bg_response.raise_for_status()
+
+                bg_path = temp_path / "background.png"
+                bg_path.write_bytes(bg_response.content)
+                logger.info(f"[{request_id}] Background downloaded: {len(bg_response.content)} bytes")
+
+            # Download character sprite for processing
+            logger.info(f"[{request_id}] Downloading character sprite for processing...")
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                char_response = await client.get(request.character_url)
+                char_response.raise_for_status()
+
+                char_path = temp_path / "character.png"
+                char_path.write_bytes(char_response.content)
+                logger.info(f"[{request_id}] Character sprite downloaded: {len(char_response.content)} bytes")
+
+            # Initialize game generator
+            output_dir = temp_path / "generated_game"
+            game_gen = GameGenerator(output_dir=str(output_dir))
+
+            # Generate game with URLs (runs in thread pool since it's blocking)
+            logger.info(f"[{request_id}] Generating game with Claude Vision analysis...")
+            game_html, scene_config = await asyncio.to_thread(
+                game_gen.generate_game_html_with_urls,
+                character_sprite_path=str(char_path),
+                character_sprite_url=request.character_url,
+                background_image_path=str(bg_path),
+                background_image_url=request.background_url,
+                num_frames=request.num_frames,
+                game_name=request.game_name
+            )
+
+            logger.info(f"[{request_id}] Game HTML generated: {len(game_html)} characters")
+
+            # Extract statistics
+            platforms_detected = len(scene_config["physics"]["platforms"])
+            gaps_detected = len(scene_config["analysis"].get("gaps", []))
+            spawn_point = scene_config["analysis"]["spawn"]
+
+            logger.success(f"[{request_id}] Game generated successfully!")
+            logger.info(f"[{request_id}] Platforms: {platforms_detected}, Gaps: {gaps_detected}")
+
+            return GenerateGameResponse(
+                game_html=game_html,
+                scene_config=scene_config,
+                platforms_detected=platforms_detected,
+                gaps_detected=gaps_detected,
+                spawn_point=spawn_point
+            )
+
+        except httpx.HTTPStatusError as e:
+            error_msg = f"Failed to download image: {e.response.status_code} {e.response.reason_phrase}"
+            logger.error(f"[{request_id}] {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg
+            ) from e
+
+        except httpx.RequestError as e:
+            error_msg = f"Network error downloading image: {str(e)}"
+            logger.error(f"[{request_id}] {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=error_msg
+            ) from e
+
+        except ValueError as e:
+            # GameGenerator raises ValueError for missing API key
+            error_msg = str(e)
+            logger.error(f"[{request_id}] Configuration error: {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Server configuration error: {error_msg}"
+            ) from e
+
+        except Exception as e:
+            error_msg = f"Failed to generate game: {str(e)}"
+            logger.exception(f"[{request_id}] {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=error_msg
+            ) from e
 
 
 if __name__ == "__main__":

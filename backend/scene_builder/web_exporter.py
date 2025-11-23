@@ -220,14 +220,39 @@ class WebGameExporter:
             }}
 
             preload() {{
-                // Load background
-                this.load.image('background', '{bg_path}');
+                // Check if images are data URIs and handle them specially
+                const bgPath = '{bg_path}';
+                const spritePath = '{sprite_path}';
 
-                // Load character sprite sheet
-                this.load.spritesheet('player', '{sprite_path}', {{
-                    frameWidth: {config['character']['frame_width']},
-                    frameHeight: {config['character']['frame_height']}
-                }});
+                if (bgPath.startsWith('data:')) {{
+                    // Handle background data URI
+                    const bgImage = new Image();
+                    bgImage.onload = () => {{
+                        this.textures.addImage('background', bgImage);
+                        console.log('Background loaded from data URI');
+                    }};
+                    bgImage.src = bgPath;
+                }} else {{
+                    this.load.image('background', bgPath);
+                }}
+
+                if (spritePath.startsWith('data:')) {{
+                    // Handle sprite data URI
+                    const spriteImage = new Image();
+                    spriteImage.onload = () => {{
+                        this.textures.addSpriteSheet('player', spriteImage, {{
+                            frameWidth: {config['character']['frame_width']},
+                            frameHeight: {config['character']['frame_height']}
+                        }});
+                        console.log('Sprite sheet loaded from data URI');
+                    }};
+                    spriteImage.src = spritePath;
+                }} else {{
+                    this.load.spritesheet('player', spritePath, {{
+                        frameWidth: {config['character']['frame_width']},
+                        frameHeight: {config['character']['frame_height']}
+                    }});
+                }}
 
                 // Loading progress
                 this.load.on('progress', (value) => {{

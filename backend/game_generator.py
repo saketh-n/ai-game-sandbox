@@ -357,6 +357,220 @@ Only return the JSON, no other text."""
 
         return game_path
 
+    def generate_game_html_with_embedded_assets(
+        self,
+        character_sprite: str,
+        background_image: str,
+        num_frames: int = 8,
+        game_name: str = "PlatformerGame",
+        player_config: Optional[Dict[str, Any]] = None
+    ) -> tuple[str, Dict[str, Any]]:
+        """
+        Generate game HTML with base64-embedded assets for iframe embedding
+
+        Args:
+            character_sprite: Path to character sprite sheet
+            background_image: Path to background image
+            num_frames: Number of animation frames
+            game_name: Name for the generated game
+            player_config: Optional player physics configuration
+
+        Returns:
+            Tuple of (game_html_string, scene_config_dict)
+        """
+        print("=" * 70)
+        print(f"🎮 Generating {game_name} with embedded assets")
+        print("=" * 70)
+
+        # Convert to Path objects
+        char_path = Path(character_sprite)
+        bg_path = Path(background_image)
+
+        # Validate inputs
+        if not char_path.exists():
+            raise FileNotFoundError(f"Character sprite not found: {char_path}")
+        if not bg_path.exists():
+            raise FileNotFoundError(f"Background image not found: {bg_path}")
+
+        # Process assets
+        processed_sprite_path, sprite_config = self.process_character_sprite(
+            char_path,
+            num_frames=num_frames
+        )
+
+        platform_analysis = self.analyze_walkable_platforms(bg_path)
+
+        # Set up default player configuration
+        if player_config is None:
+            player_config = {
+                "walk_speed": 180,
+                "jump_velocity": -380,
+                "max_jumps": 2
+            }
+
+        # Convert images to base64
+        import base64
+
+        print(f"\n📦 Encoding assets as base64...")
+        with open(bg_path, 'rb') as f:
+            bg_base64 = base64.b64encode(f.read()).decode('utf-8')
+        bg_data_url = f"data:image/png;base64,{bg_base64}"
+        print(f"  ✓ Background encoded")
+
+        with open(processed_sprite_path, 'rb') as f:
+            sprite_base64 = base64.b64encode(f.read()).decode('utf-8')
+        sprite_data_url = f"data:image/png;base64,{sprite_base64}"
+        print(f"  ✓ Character sprite encoded")
+
+        # Create scene configuration with data URLs
+        scene_config = {
+            "name": game_name,
+            "background": {
+                "path": bg_data_url,  # Use data URL instead of file path
+                "width": platform_analysis["width"],
+                "height": platform_analysis["height"]
+            },
+            "character": {
+                "sprite_path": sprite_data_url,  # Use data URL instead of file path
+                "frame_width": sprite_config["frame_width"],
+                "frame_height": sprite_config["frame_height"],
+                "num_frames": sprite_config["num_frames"],
+                "spawn_x": platform_analysis["spawn"]["x"],
+                "spawn_y": platform_analysis["spawn"]["y"]
+            },
+            "physics": {
+                "gravity": 600,
+                "platforms": platform_analysis["platforms"],
+                "bounds": {
+                    "x": 0,
+                    "y": 0,
+                    "width": platform_analysis["width"],
+                    "height": platform_analysis["height"]
+                }
+            },
+            "player": player_config,
+            "analysis": platform_analysis
+        }
+
+        # Generate HTML with embedded assets
+        print(f"\n🔨 Generating HTML with embedded assets...")
+        game_html = self.web_exporter._generate_html(
+            scene_config,
+            bg_data_url,  # Pass data URL
+            sprite_data_url  # Pass data URL
+        )
+
+        print(f"  ✓ Game HTML generated: {len(game_html)} characters")
+        print("=" * 70)
+
+        return game_html, scene_config
+
+    def generate_game_html_with_urls(
+        self,
+        character_sprite_path: str,
+        character_sprite_url: str,
+        background_image_path: str,
+        background_image_url: str,
+        num_frames: int = 8,
+        game_name: str = "PlatformerGame",
+        player_config: Optional[Dict[str, Any]] = None
+    ) -> tuple[str, Dict[str, Any]]:
+        """
+        Generate game HTML using original image URLs (for Phaser compatibility)
+
+        Downloads images for analysis/processing, but uses original URLs in HTML
+        since Phaser doesn't support data URIs.
+
+        Args:
+            character_sprite_path: Local path to downloaded character sprite
+            character_sprite_url: Original URL to character sprite
+            background_image_path: Local path to downloaded background
+            background_image_url: Original URL to background
+            num_frames: Number of animation frames
+            game_name: Name for the generated game
+            player_config: Optional player physics configuration
+
+        Returns:
+            Tuple of (game_html_string, scene_config_dict)
+        """
+        print("=" * 70)
+        print(f"🎮 Generating {game_name} with URL references")
+        print("=" * 70)
+
+        # Convert to Path objects
+        char_path = Path(character_sprite_path)
+        bg_path = Path(background_image_path)
+
+        # Process character sprite locally (remove background, get dimensions)
+        processed_sprite_path, sprite_config = self.process_character_sprite(
+            char_path,
+            num_frames=num_frames
+        )
+
+        # Analyze background locally with Claude Vision
+        platform_analysis = self.analyze_walkable_platforms(bg_path)
+
+        # Set up default player configuration
+        if player_config is None:
+            player_config = {
+                "walk_speed": 180,
+                "jump_velocity": -380,
+                "max_jumps": 2
+            }
+
+        # Convert processed sprite to base64 for embedding
+        import base64
+        print(f"\n📦 Encoding processed sprite as base64...")
+        with open(processed_sprite_path, 'rb') as f:
+            sprite_base64 = base64.b64encode(f.read()).decode('utf-8')
+        processed_sprite_data_url = f"data:image/png;base64,{sprite_base64}"
+        print(f"  ✓ Processed sprite encoded ({len(sprite_base64)} bytes)")
+
+        # Create scene configuration
+        scene_config = {
+            "name": game_name,
+            "background": {
+                "path": background_image_url,  # Use original URL for background
+                "width": platform_analysis["width"],
+                "height": platform_analysis["height"]
+            },
+            "character": {
+                "sprite_path": processed_sprite_data_url,  # Use data URL for processed sprite
+                "sprite_path_original": character_sprite_url,  # Keep original for reference
+                "frame_width": sprite_config["frame_width"],
+                "frame_height": sprite_config["frame_height"],
+                "num_frames": sprite_config["num_frames"],
+                "spawn_x": platform_analysis["spawn"]["x"],
+                "spawn_y": platform_analysis["spawn"]["y"]
+            },
+            "physics": {
+                "gravity": 600,
+                "platforms": platform_analysis["platforms"],
+                "bounds": {
+                    "x": 0,
+                    "y": 0,
+                    "width": platform_analysis["width"],
+                    "height": platform_analysis["height"]
+                }
+            },
+            "player": player_config,
+            "analysis": platform_analysis
+        }
+
+        # Generate HTML with URLs (background URL + sprite data URI)
+        print(f"\n🔨 Generating HTML with URL references...")
+        game_html = self.web_exporter._generate_html(
+            scene_config,
+            background_image_url,  # Pass original URL for background
+            processed_sprite_data_url  # Pass data URL for processed sprite
+        )
+
+        print(f"  ✓ Game HTML generated: {len(game_html)} characters")
+        print(f"  ✓ Using original image URLs (Phaser compatible)")
+        print("=" * 70)
+
+        return game_html, scene_config
+
     def _create_run_script(self, output_path: Path):
         """Create a simple HTTP server script to run the game"""
         script_content = '''#!/usr/bin/env python3

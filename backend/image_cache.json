@@ -148,5 +148,35 @@
     "additional_instructions": "Ensure perfect consistency in character design across all eight frames. Each frame should show clear progression of complete walking cycle with distinct leg positions. Frames arranged horizontally in ",
     "image_size": "",
     "output_format": "png"
+  },
+  "1a4923bb46a9b1cfd7d8680a9d40d7c9": {
+    "image_url": "https://v3b.fal.media/files/b/penguin/M7s-c2Yw7dxCbWRVXr4uq.png",
+    "prompt": "Create a sprite sheet of collectible items in the style of an 8-bit retro video game with a white background with the following prehistoric theater performance",
+    "category": "Collectible Item",
+    "timestamp": "2025-11-22T22:08:51.103008",
+    "style": "8-bit retro pixel art",
+    "additional_instructions": "",
+    "image_size": "",
+    "output_format": "png"
+  },
+  "a8b8997ded43618c4b570ca1ebbca95f": {
+    "image_url": "https://v3b.fal.media/files/b/zebra/7gnqiU3Gqy7AkmPXbT_1X.png",
+    "prompt": "Generate a 2d platformer background with the following prehistoric theater performance, 8-bit graphics",
+    "category": "Background",
+    "timestamp": "2025-11-22T22:08:45.696196",
+    "style": "",
+    "additional_instructions": "",
+    "image_size": "landscape_4_3",
+    "output_format": "png"
+  },
+  "30c61c2f3c773b7872a0e34f3e751d07": {
+    "image_url": "https://v3b.fal.media/files/b/panda/Y5cbSrpeMykG5g2-gnMw5.png",
+    "prompt": "2D sprite sheet of a theatrical Tyrannosaurus Rex wearing a red velvet stage curtain cape and a golden crown, pixel art style for platformer game. Eight frames of walking animation cycle displayed sid",
+    "category": "Main Character",
+    "timestamp": "2025-11-22T22:08:56.225841",
+    "style": "pixel art sprite sheet, 2D platformer game graphics, retro gaming aesthetic",
+    "additional_instructions": "Ensure perfect consistency in character design across all eight frames. Each frame should show clear progression of complete walking cycle with distinct leg positions. Frames arranged horizontally in ",
+    "image_size": "",
+    "output_format": "png"
   }
 }
