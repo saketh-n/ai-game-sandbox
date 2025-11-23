@@ -205,7 +205,7 @@ IMPORTANT:
     try:
         # Call Claude Vision API
         message = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-5",
             max_tokens=2000,
             messages=[
                 {
@@ -230,6 +230,15 @@ IMPORTANT:
         
         response_text = message.content[0].text.strip()
         logger.info(f"Claude Vision response: {response_text[:200]}...")
+        
+        # Strip markdown code blocks if present (```json ... ```)
+        if response_text.startswith("```"):
+            # Remove opening ```json or ```
+            response_text = response_text.split("\n", 1)[1] if "\n" in response_text else response_text[3:]
+            # Remove closing ```
+            if response_text.endswith("```"):
+                response_text = response_text.rsplit("```", 1)[0]
+            response_text = response_text.strip()
         
         # Parse JSON response
         collectibles_data = json.loads(response_text)
@@ -883,8 +892,8 @@ async def generate_game(request: GenerateGameRequest):
         try:
             # Download background image for analysis
             logger.info(f"[{request_id}] Downloading background image for analysis...")
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                bg_response = await client.get(request.background_url)
+            async with httpx.AsyncClient(timeout=30.0) as http_client:
+                bg_response = await http_client.get(request.background_url)
                 bg_response.raise_for_status()
 
                 bg_path = temp_path / "background.png"
@@ -893,8 +902,8 @@ async def generate_game(request: GenerateGameRequest):
 
             # Download character sprite for processing
             logger.info(f"[{request_id}] Downloading character sprite for processing...")
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                char_response = await client.get(request.character_url)
+            async with httpx.AsyncClient(timeout=30.0) as http_client:
+                char_response = await http_client.get(request.character_url)
                 char_response.raise_for_status()
 
                 char_path = temp_path / "character.png"
@@ -911,8 +920,8 @@ async def generate_game(request: GenerateGameRequest):
             collectible_metadata = []
             if request.collectible_url:
                 logger.info(f"[{request_id}] Downloading collectible sprite sheet...")
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    coll_response = await client.get(request.collectible_url)
+                async with httpx.AsyncClient(timeout=30.0) as http_client:
+                    coll_response = await http_client.get(request.collectible_url)
                     coll_response.raise_for_status()
 
                     coll_path = temp_path / "collectibles.png"
@@ -924,7 +933,7 @@ async def generate_game(request: GenerateGameRequest):
                 collectible_metadata = await asyncio.to_thread(
                     analyze_collectible_metadata,
                     coll_path,
-                    client  # Anthropic client
+                    client  # Global Anthropic client (not http_client)
                 )
                 logger.info(f"[{request_id}] Identified {len(collectible_metadata)} collectibles with metadata")
 
