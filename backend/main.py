@@ -101,6 +101,7 @@ class GenerateGameRequest(BaseModel):
     character_url: str = Field(..., description="URL to character sprite sheet")
     num_frames: int = Field(default=8, description="Number of animation frames in sprite sheet")
     game_name: str = Field(default="GeneratedGame", description="Name for the generated game")
+    debug_options: dict = Field(default={"show_sprite_frames": True, "show_platforms": False}, description="Debug visualization options")
 
 class GenerateGameResponse(BaseModel):
     game_html: str = Field(..., description="Complete HTML game code")
@@ -109,8 +110,103 @@ class GenerateGameResponse(BaseModel):
     gaps_detected: int = Field(..., description="Number of gaps detected")
     spawn_point: dict = Field(..., description="Character spawn coordinates")
     debug_frames: List[str] = Field(default=[], description="Base64 encoded debug frames for visualization")
+    debug_platforms: str = Field(default="", description="Base64 encoded platform visualization")
 
 image_generator = ImageGenerator(api_key=os.getenv("FAL_KEY"))
+
+
+def generate_platform_debug(
+    background_path: Path,
+    platforms: List[dict],
+    gaps: List[dict],
+    spawn_point: dict
+) -> str:
+    """
+    Generate a debug visualization showing platforms overlaid on the background.
+
+    Args:
+        background_path: Path to background image
+        platforms: List of platform dictionaries with x, y, width, height
+        gaps: List of gap dictionaries
+        spawn_point: Spawn point with x, y coordinates
+
+    Returns:
+        Base64 encoded PNG image
+    """
+    from PIL import Image, ImageDraw
+    import base64
+    import io
+
+    # Load background
+    bg_img = Image.open(background_path).convert('RGBA')
+
+    # Create overlay
+    overlay = Image.new('RGBA', bg_img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    # Draw platforms (semi-transparent green rectangles)
+    for platform in platforms:
+        x, y, w, h = platform['x'], platform['y'], platform['width'], platform['height']
+        # Filled rectangle with transparency
+        draw.rectangle(
+            [x, y, x + w, y + h],
+            fill=(0, 255, 0, 80),  # Green with alpha
+            outline=(0, 255, 0, 255),  # Solid green outline
+            width=2
+        )
+        # Add platform label
+        label = f"P: {w}x{h}"
+        draw.text((x + 5, y + 5), label, fill=(255, 255, 255, 255))
+
+    # Draw gaps (semi-transparent red rectangles)
+    for gap in gaps:
+        x, y, w, h = gap.get('x', 0), gap.get('y', 0), gap.get('width', 0), gap.get('height', 0)
+        if w > 0 and h > 0:
+            draw.rectangle(
+                [x, y, x + w, y + h],
+                fill=(255, 0, 0, 80),  # Red with alpha
+                outline=(255, 0, 0, 255),  # Solid red outline
+                width=2
+            )
+            # Add gap label
+            label = f"Gap: {w}px"
+            draw.text((x + 5, y + 5), label, fill=(255, 255, 255, 255))
+
+    # Draw spawn point (yellow circle)
+    spawn_x, spawn_y = spawn_point['x'], spawn_point['y']
+    spawn_radius = 10
+    draw.ellipse(
+        [spawn_x - spawn_radius, spawn_y - spawn_radius,
+         spawn_x + spawn_radius, spawn_y + spawn_radius],
+        fill=(255, 255, 0, 200),  # Yellow with alpha
+        outline=(255, 255, 0, 255),  # Solid yellow outline
+        width=2
+    )
+    # Add spawn label
+    draw.text((spawn_x + 15, spawn_y - 10), "SPAWN", fill=(255, 255, 0, 255))
+
+    # Composite overlay onto background
+    result = Image.alpha_composite(bg_img, overlay)
+
+    # Add legend
+    legend_draw = ImageDraw.Draw(result)
+    legend_y = 10
+    legend_draw.rectangle([10, legend_y, 200, legend_y + 80], fill=(0, 0, 0, 180), outline=(255, 255, 255, 255))
+    legend_draw.text((15, legend_y + 5), "Platform Debug Legend:", fill=(255, 255, 255, 255))
+    legend_draw.rectangle([15, legend_y + 25, 30, legend_y + 35], fill=(0, 255, 0, 80), outline=(0, 255, 0, 255))
+    legend_draw.text((35, legend_y + 23), "Walkable Platform", fill=(255, 255, 255, 255))
+    legend_draw.rectangle([15, legend_y + 45, 30, legend_y + 55], fill=(255, 0, 0, 80), outline=(255, 0, 0, 255))
+    legend_draw.text((35, legend_y + 43), "Gap (must jump)", fill=(255, 255, 255, 255))
+    legend_draw.ellipse([15, legend_y + 65, 25, legend_y + 75], fill=(255, 255, 0, 200), outline=(255, 255, 0, 255))
+    legend_draw.text((35, legend_y + 63), "Spawn Point", fill=(255, 255, 255, 255))
+
+    # Convert to base64
+    buffer = io.BytesIO()
+    result.save(buffer, format='PNG')
+    buffer.seek(0)
+    img_base64 = base64.b64encode(buffer.read()).decode('utf-8')
+
+    return f"data:image/png;base64,{img_base64}"
 
 
 @app.get("/")
@@ -549,6 +645,19 @@ async def generate_game(request: GenerateGameRequest):
             gaps_detected = len(scene_config["analysis"].get("gaps", []))
             spawn_point = scene_config["analysis"]["spawn"]
 
+            # Generate platform debug visualization if requested
+            debug_platforms = ""
+            if request.debug_options.get("show_platforms", False):
+                logger.info(f"[{request_id}] Generating platform debug visualization...")
+                debug_platforms = await asyncio.to_thread(
+                    generate_platform_debug,
+                    bg_path,
+                    scene_config["physics"]["platforms"],
+                    scene_config["analysis"].get("gaps", []),
+                    spawn_point
+                )
+                logger.info(f"[{request_id}] Platform debug visualization generated")
+
             logger.success(f"[{request_id}] Game generated successfully!")
             logger.info(f"[{request_id}] Platforms: {platforms_detected}, Gaps: {gaps_detected}")
 
@@ -558,7 +667,8 @@ async def generate_game(request: GenerateGameRequest):
                 platforms_detected=platforms_detected,
                 gaps_detected=gaps_detected,
                 spawn_point=spawn_point,
-                debug_frames=debug_frames
+                debug_frames=debug_frames if request.debug_options.get("show_sprite_frames", True) else [],
+                debug_platforms=debug_platforms
             )
 
         except httpx.HTTPStatusError as e:

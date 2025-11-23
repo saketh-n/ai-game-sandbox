@@ -163,7 +163,191 @@ Only return the JSON, no other text."""
         print(f"  ✓ Identified {len(analysis_data['gaps'])} gaps requiring jumps")
         print(f"  ✓ Spawn point: ({analysis_data['spawn']['x']}, {analysis_data['spawn']['y']})")
 
-        return analysis_data
+        # Step 2: Verify detections with overlay feedback
+        print(f"\n🔍 Verifying platform detections...")
+        verified_analysis = self.verify_platform_detections(background_path, analysis_data)
+
+        return verified_analysis
+
+    def verify_platform_detections(
+        self,
+        background_path: Path,
+        initial_analysis: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Verify platform detections by showing Claude an overlay of its initial detections
+        and asking it to correct them, focusing only on walkable surfaces.
+
+        Args:
+            background_path: Path to background image
+            initial_analysis: Initial platform analysis from Claude
+
+        Returns:
+            Verified/corrected platform analysis
+        """
+        import base64
+        import io
+        from PIL import ImageDraw
+
+        # Load background
+        img = Image.open(background_path).convert('RGBA')
+        width, height = img.size
+
+        # Create overlay with detected platforms
+        overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+
+        # Draw initial platform detections
+        for i, platform in enumerate(initial_analysis['platforms']):
+            x = platform['x']
+            y = platform['y']
+            w = platform['width']
+            h = platform['height']
+
+            # Draw semi-transparent green rectangles
+            draw.rectangle(
+                [x, y, x + w, y + h],
+                fill=(0, 255, 0, 80),  # Green with alpha
+                outline=(0, 255, 0, 255),  # Solid green outline
+                width=3
+            )
+
+            # Add platform number
+            label = f"P{i+1}"
+            draw.text((x + 5, y + 5), label, fill=(255, 255, 255, 255))
+
+        # Draw gaps
+        for gap in initial_analysis.get('gaps', []):
+            x = gap.get('x', 0)
+            y = gap.get('y', 0)
+            w = gap.get('width', 0)
+            h = gap.get('height', 0)
+            if w > 0 and h > 0:
+                draw.rectangle(
+                    [x, y, x + w, y + h],
+                    fill=(255, 0, 0, 60),  # Red with alpha
+                    outline=(255, 0, 0, 200),
+                    width=2
+                )
+
+        # Draw spawn point
+        spawn_x = initial_analysis['spawn']['x']
+        spawn_y = initial_analysis['spawn']['y']
+        spawn_radius = 12
+        draw.ellipse(
+            [spawn_x - spawn_radius, spawn_y - spawn_radius,
+             spawn_x + spawn_radius, spawn_y + spawn_radius],
+            fill=(255, 255, 0, 200),
+            outline=(255, 255, 0, 255),
+            width=3
+        )
+
+        # Composite overlay onto background
+        overlay_img = Image.alpha_composite(img, overlay)
+
+        # Convert to base64
+        buffer = io.BytesIO()
+        overlay_img.save(buffer, format='PNG')
+        buffer.seek(0)
+        img_base64 = base64.standard_b64encode(buffer.getvalue()).decode('utf-8')
+
+        # Create verification prompt
+        verification_prompt = f"""You previously analyzed this 2D platformer background ({width}x{height}px) and detected platforms.
+
+I've overlaid your detections on the image:
+- GREEN rectangles = platforms you detected (labeled P1, P2, etc.)
+- RED rectangles = gaps you detected
+- YELLOW circle = spawn point you chose
+
+Please review your detections and provide CORRECTED platform data following these CRITICAL rules:
+
+ONLY DETECT ACTUAL WALKABLE SURFACES:
+- ONLY solid horizontal grass/ground platforms where a character can walk
+- IGNORE all decorative elements (trees, mushrooms, crystals, plants, etc.)
+- Trees and vegetation are NOT platforms - they sit ON platforms
+- Focus on the solid ground/terrain underneath decorations
+- A platform should be a continuous walkable surface (can span full width if ground is continuous)
+
+PLATFORM REQUIREMENTS:
+- Must be wide enough for a character to stand on (minimum ~50px wide)
+- Should capture the full horizontal extent of walkable ground
+- Include ONLY the grass/ground surface layer, not decorations on top
+- If ground is continuous across the bottom, it should be ONE platform
+
+ENSURE FULL LEVEL TRAVERSAL:
+- Player must be able to walk or jump between all platforms
+- Check that platforms allow movement from left edge to right edge of the scene
+- Verify no unreachable areas or impossible gaps
+
+Review the image carefully and return CORRECTED analysis as JSON:
+{{
+  "platforms": [
+    {{"name": "Platform Name", "x": 0, "y": 740, "width": 1024, "height": 28, "walkable": true}},
+    ...
+  ],
+  "gaps": [
+    {{"description": "Gap description", "from_platform": "Platform A", "to_platform": "Platform B", "width": 50, "x": 100, "y": 700, "height": 20}},
+    ...
+  ],
+  "spawn": {{"x": 512, "y": 640}},
+  "corrections_made": ["List any corrections you made from the initial detection"],
+  "notes": ["Important observations about the level layout"]
+}}
+
+Only return the JSON, no other text."""
+
+        # Call Claude Vision with overlay
+        print(f"  Sending overlay to Claude for verification...")
+
+        response = self.anthropic_client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=4096,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": img_base64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": verification_prompt
+                        }
+                    ]
+                }
+            ]
+        )
+
+        # Parse verified response
+        response_text = response.content[0].text.strip()
+
+        # Remove markdown code fences if present
+        if response_text.startswith("```"):
+            lines = response_text.split('\n')
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            response_text = '\n'.join(lines).strip()
+
+        verified_data = json.loads(response_text)
+
+        # Add image dimensions
+        verified_data["width"] = width
+        verified_data["height"] = height
+
+        print(f"  ✓ Verified: {len(verified_data['platforms'])} platforms (was {len(initial_analysis['platforms'])})")
+        if verified_data.get('corrections_made'):
+            print(f"  ✓ Corrections made:")
+            for correction in verified_data['corrections_made']:
+                print(f"    - {correction}")
+
+        return verified_data
 
     def process_character_sprite(
         self,
