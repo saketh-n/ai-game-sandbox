@@ -649,6 +649,9 @@ class WebGameExporter:
                     return false;
                 }}, this);
 
+                // Create projectiles group
+                this.projectiles = this.physics.add.group();
+
                 // Create collectibles (clear any existing group first)
                 const collectiblePositions = {collectible_positions_json};
                 if (this.collectibles && this.collectibles.children) {{
@@ -800,6 +803,14 @@ class WebGameExporter:
                         mob.setData('direction', Math.random() < 0.5 ? -1 : 1);
                         mob.setData('patrolDistance', finalPatrolDist);
                         mob.setData('startX', mobX);
+
+                        // Projectile shooting - random interval between 2-4 seconds
+                        const shootInterval = 2000 + Math.random() * 2000;
+                        mob.setData('shootTimer', this.time.addEvent({{
+                            delay: shootInterval,
+                            callback: () => this.shootProjectile(mob),
+                            loop: true
+                        }}));
                         
                         // Create health bar for mob
                         const healthBarBg = this.add.graphics();
@@ -848,7 +859,16 @@ class WebGameExporter:
                         null,
                         this
                     );
-                    
+
+                    // Projectile-Player collision
+                    this.physics.add.overlap(
+                        this.player,
+                        this.projectiles,
+                        this.handleProjectileHit,
+                        null,
+                        this
+                    );
+
                     console.log('Created ' + mobsCreated + ' mobs (attempted ' + attempts + ' placements)');
                 }}
 
@@ -1001,13 +1021,19 @@ class WebGameExporter:
 
             killMob(mob) {{
                 console.log('Mob defeated!');
-                
+
+                // Remove shooting timer
+                const shootTimer = mob.getData('shootTimer');
+                if (shootTimer) {{
+                    shootTimer.remove();
+                }}
+
                 // Destroy health bars
                 const healthBarBg = mob.getData('healthBarBg');
                 const healthBarFill = mob.getData('healthBarFill');
                 if (healthBarBg) healthBarBg.destroy();
                 if (healthBarFill) healthBarFill.destroy();
-                
+
                 // Death animation
                 this.tweens.add({{
                     targets: mob,
@@ -1025,13 +1051,103 @@ class WebGameExporter:
                 const health = mob.getData('health');
                 const maxHealth = mob.getData('maxHealth');
                 const healthPercent = health / maxHealth;
-                
+
                 const healthBarFill = mob.getData('healthBarFill');
                 if (healthBarFill) {{
                     healthBarFill.clear();
                     healthBarFill.fillStyle(0xFF0000, 1);
                     healthBarFill.fillRect(0, 0, 50 * healthPercent, 6);
                 }}
+            }}
+
+            shootProjectile(mob) {{
+                // Don't shoot if mob is dead or player has won
+                if (!mob.active || this.hasWon) return;
+
+                // Calculate direction towards player
+                const directionX = this.player.x - mob.x;
+                const directionY = this.player.y - mob.y;
+                const distance = Math.sqrt(directionX * directionX + directionY * directionY);
+
+                // Only shoot if player is within reasonable range (e.g., 600 pixels)
+                if (distance > 600) return;
+
+                // Normalize direction
+                const normalizedX = directionX / distance;
+                const normalizedY = directionY / distance;
+
+                // Create projectile - a red circle
+                const projectile = this.add.circle(mob.x, mob.y, 8, 0xFF4500);
+                this.physics.add.existing(projectile);
+
+                // Set projectile velocity (speed of 300 pixels/second)
+                const projectileSpeed = 300;
+                projectile.body.setVelocity(
+                    normalizedX * projectileSpeed,
+                    normalizedY * projectileSpeed
+                );
+
+                // Store damage value
+                projectile.setData('damage', 5 + Math.floor(Math.random() * 6)); // 5-10 damage
+
+                // Add to projectiles group
+                this.projectiles.add(projectile);
+
+                // Add glow effect
+                this.tweens.add({{
+                    targets: projectile,
+                    alpha: {{ from: 1, to: 0.5 }},
+                    duration: 300,
+                    yoyo: true,
+                    repeat: -1
+                }});
+
+                // Destroy projectile after 3 seconds if it hasn't hit anything
+                this.time.delayedCall(3000, () => {{
+                    if (projectile && projectile.active) {{
+                        projectile.destroy();
+                    }}
+                }});
+
+                console.log('Mob fired projectile towards player');
+            }}
+
+            handleProjectileHit(player, projectile) {{
+                // Don't process if already won
+                if (this.hasWon) return;
+
+                // Get damage from projectile
+                const damage = projectile.getData('damage') || 5;
+
+                // Apply damage to player
+                this.playerHealth = Math.max(0, this.playerHealth - damage);
+                console.log('Player hit by projectile! Took ' + damage + ' damage. Health: ' + this.playerHealth);
+
+                // Flash effect
+                this.tweens.add({{
+                    targets: player,
+                    alpha: {{ from: 1, to: 0.3 }},
+                    duration: 100,
+                    yoyo: true,
+                    repeat: 2
+                }});
+
+                // Small knockback
+                const knockbackX = projectile.body.velocity.x * 0.5;
+                const knockbackY = projectile.body.velocity.y * 0.5;
+                player.setVelocity(player.body.velocity.x + knockbackX, player.body.velocity.y + knockbackY);
+
+                // Update status bar
+                this.updateStatusBar();
+
+                // Check if player died
+                if (this.playerHealth <= 0) {{
+                    this.showGameNotification('💀 GAME OVER! 💀<br>Press ESC to restart from Level 1', 3000);
+                    this.physics.pause();
+                }}
+
+                // Destroy projectile
+                projectile.destroy();
             }}
 
             applyCollectibleEffect(statusEffect) {{
