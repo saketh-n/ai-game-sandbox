@@ -83,6 +83,7 @@ class GenerateImageRequest(BaseModel):
     additional_instructions: str = Field(default="", description="Additional generation instructions")
     image_size: str = Field(default="", description="Image size specification")
     output_format: str = Field(default="png", description="Output format")
+    force_regenerate: bool = Field(default=False, description="Force regeneration, bypassing cache")
 
 class GenerateImageResponse(BaseModel):
     image_url: str
@@ -390,30 +391,33 @@ async def clear_image_cache():
 async def generate_image_asset(request: GenerateImageRequest):
     """
     Generate an image asset from a prompt. 
-    Checks cache first and returns cached image URL if available.
+    Checks cache first and returns cached image URL if available (unless force_regenerate is True).
     """
     request_id = f"img_{os.urandom(4).hex()}"
     logger.info(f"[{request_id}] Image generation request for category: {request.category}")
     logger.info(f"[{request_id}] Prompt: {request.prompt[:100]}...")
-
-    # Check cache first
-    cached_url = image_cache.get(
-        prompt=request.prompt,
-        category=request.category,
-        style=request.style,
-        additional_instructions=request.additional_instructions,
-        image_size=request.image_size,
-        output_format=request.output_format
-    )
     
-    if cached_url:
-        logger.info(f"[{request_id}] Returning cached image URL")
-        return GenerateImageResponse(
-            image_url=cached_url,
+    if request.force_regenerate:
+        logger.info(f"[{request_id}] Force regenerate flag set, bypassing cache")
+    else:
+        # Check cache first (only if not forcing regeneration)
+        cached_url = image_cache.get(
             prompt=request.prompt,
             category=request.category,
-            cached=True
+            style=request.style,
+            additional_instructions=request.additional_instructions,
+            image_size=request.image_size,
+            output_format=request.output_format
         )
+        
+        if cached_url:
+            logger.info(f"[{request_id}] Returning cached image URL")
+            return GenerateImageResponse(
+                image_url=cached_url,
+                prompt=request.prompt,
+                category=request.category,
+                cached=True
+            )
 
     # Generate new image
     logger.info(f"[{request_id}] No cache found, generating new image...")

@@ -46,58 +46,69 @@ const GenerateAssets = () => {
     generateAllImages(initialAssets)
   }, [selectedPrompts, navigate])
 
+  const generateSingleImage = async (index: number, forceRegenerate: boolean = false) => {
+    const asset = assets[index]
+    const selectedPrompt = selectedPrompts[index]
+
+    // Update status to generating
+    setAssets(prev => prev.map((a, idx) => 
+      idx === index ? { ...a, status: 'generating', cached: false } : a
+    ))
+
+    try {
+      const response = await fetch(`${API_URL}/generate-image-asset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: asset.prompt,
+          category: asset.category,
+          style: selectedPrompt.style || '',
+          additional_instructions: selectedPrompt.additional_instructions || '',
+          image_size: selectedPrompt.image_size || '',
+          output_format: selectedPrompt.output_format || 'png',
+          force_regenerate: forceRegenerate,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`)
+      }
+
+      const data = await response.json()
+      
+      // Update status to completed with image URL and cached flag
+      setAssets(prev => prev.map((a, idx) => 
+        idx === index ? { 
+          ...a, 
+          status: 'completed', 
+          imageUrl: data.image_url,
+          cached: data.cached || false
+        } : a
+      ))
+    } catch (error) {
+      // Update status to error
+      setAssets(prev => prev.map((a, idx) => 
+        idx === index ? { 
+          ...a, 
+          status: 'error', 
+          error: error instanceof Error ? error.message : 'Failed to generate'
+        } : a
+      ))
+    }
+  }
+
   const generateAllImages = async (initialAssets: AssetGeneration[]) => {
     // Start all generations in parallel
-    const generationPromises = initialAssets.map(async (asset, index) => {
-      // Update status to generating
-      setAssets(prev => prev.map((a, idx) => 
-        idx === index ? { ...a, status: 'generating' } : a
-      ))
-
-      try {
-        const selectedPrompt = selectedPrompts[index]
-        const response = await fetch(`${API_URL}/generate-image-asset`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: asset.prompt,
-            category: asset.category,
-            style: selectedPrompt.style || '',
-            additional_instructions: selectedPrompt.additional_instructions || '',
-            image_size: selectedPrompt.image_size || '',
-            output_format: selectedPrompt.output_format || 'png',
-          }),
-        })
-
-        if (!response.ok) {
-          throw new Error(`API error: ${response.status}`)
-        }
-
-        const data = await response.json()
-        
-        // Update status to completed with image URL and cached flag
-        setAssets(prev => prev.map((a, idx) => 
-          idx === index ? { 
-            ...a, 
-            status: 'completed', 
-            imageUrl: data.image_url,
-            cached: data.cached || false
-          } : a
-        ))
-      } catch (error) {
-        // Update status to error
-        setAssets(prev => prev.map((a, idx) => 
-          idx === index ? { 
-            ...a, 
-            status: 'error', 
-            error: error instanceof Error ? error.message : 'Failed to generate'
-          } : a
-        ))
-      }
-    }, [])
+    const generationPromises = initialAssets.map((_, index) => 
+      generateSingleImage(index, false)
+    )
 
     // Wait for all generations to complete
     await Promise.all(generationPromises)
+  }
+
+  const handleRefresh = (index: number) => {
+    generateSingleImage(index, true)
   }
 
   const handleBack = () => {
@@ -206,29 +217,45 @@ const GenerateAssets = () => {
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <span className="px-3 py-1 bg-purple-500/20 text-purple-200 text-xs font-medium rounded-full">
-                          {asset.category}
-                        </span>
-                        {asset.status === 'generating' && (
-                          <span className="text-yellow-400 text-xs font-medium">Generating...</span>
-                        )}
-                        {asset.status === 'completed' && !asset.cached && (
-                          <span className="text-green-400 text-xs font-medium">Completed</span>
-                        )}
-                        {asset.status === 'completed' && asset.cached && (
-                          <span className="flex items-center space-x-1 text-blue-400 text-xs font-medium">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                            </svg>
-                            <span>Cached</span>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
+                          <span className="px-3 py-1 bg-purple-500/20 text-purple-200 text-xs font-medium rounded-full">
+                            {asset.category}
                           </span>
-                        )}
-                        {asset.status === 'error' && (
-                          <span className="text-red-400 text-xs font-medium">Failed</span>
-                        )}
-                        {asset.status === 'pending' && (
-                          <span className="text-gray-400 text-xs font-medium">Pending...</span>
+                          {asset.status === 'generating' && (
+                            <span className="text-yellow-400 text-xs font-medium">Generating...</span>
+                          )}
+                          {asset.status === 'completed' && !asset.cached && (
+                            <span className="text-green-400 text-xs font-medium">Completed</span>
+                          )}
+                          {asset.status === 'completed' && asset.cached && (
+                            <span className="flex items-center space-x-1 text-blue-400 text-xs font-medium">
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                              </svg>
+                              <span>Cached</span>
+                            </span>
+                          )}
+                          {asset.status === 'error' && (
+                            <span className="text-red-400 text-xs font-medium">Failed</span>
+                          )}
+                          {asset.status === 'pending' && (
+                            <span className="text-gray-400 text-xs font-medium">Pending...</span>
+                          )}
+                        </div>
+                        
+                        {/* Refresh Button - Only show when completed or error */}
+                        {(asset.status === 'completed' || asset.status === 'error') && (
+                          <button
+                            onClick={() => handleRefresh(index)}
+                            className="px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 rounded-lg transition-colors flex items-center space-x-1.5 text-xs font-medium group"
+                            title="Regenerate this image"
+                          >
+                            <svg className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            <span>Refresh</span>
+                          </button>
                         )}
                       </div>
 
