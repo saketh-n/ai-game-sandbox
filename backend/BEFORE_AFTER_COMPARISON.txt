@@ -1,0 +1,228 @@
+COLLECTIBLE SEGMENTATION: BEFORE vs AFTER
+==========================================
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                           BEFORE (BROKEN)                                  ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+Input: collectible_sprite_sheet.png (white background)
+  ┌────────────────────────────────────────┐
+  │  🪙  💎  ⭐  🔑  ❤️                      │ (on white bg)
+  └────────────────────────────────────────┘
+
+Step 1: Load image directly
+  ✗ No Claude Vision analysis
+  ✗ No layout detection
+  ✗ Guessing how many sprites exist
+
+Step 2: Connected component analysis on ORIGINAL image
+  alpha = np.array(sprite_sheet)[:, :, 3]
+  content_mask = alpha > 10
+  labeled_array, num_components = ndimage.label(content_mask)
+  
+  Problem: White background NOT REMOVED!
+  ┌────────────────────────────────────────┐
+  │  ██  ██  ██  ██  ██                    │
+  │  ██  ██  ██  ██  ██  ← Includes white │
+  └────────────────────────────────────────┘
+  
+  Result: Might detect white pixels as part of sprites
+          Bounding boxes too large
+          Inconsistent sprite sizes
+
+Step 3: Raw crop and convert to base64
+  ✗ No centering
+  ✗ No normalization
+  ✗ Variable sprite dimensions
+
+Output: Array of improperly segmented sprites
+  [ "data:...", "data:...", ... ]  ← May include background artifacts
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                            AFTER (FIXED)                                   ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+Input: collectible_sprite_sheet.png (white background)
+  ┌────────────────────────────────────────┐
+  │  🪙  💎  ⭐  🔑  ❤️                      │ (on white bg)
+  └────────────────────────────────────────┘
+
+Step 1: Claude Vision Analysis (SpriteSheetAnalyzer)
+  ✓ Analyzes layout automatically
+  ✓ Detects: horizontal layout, 1 row × 5 columns
+  ✓ Estimates frame dimensions: 64×64px each
+  
+  Result:
+  {
+    "layout_type": "horizontal",
+    "rows": 1,
+    "columns": 5,
+    "total_frames": 5,
+    "frame_width": 64,
+    "frame_height": 64
+  }
+
+Step 2: Background Removal (BackgroundRemover)
+  ✓ Remove white background (tolerance=40)
+  ✓ Auto-crop excess transparent space
+  
+  Before removal:
+  ┌────────────────────────────────────────┐
+  │  🪙  💎  ⭐  🔑  ❤️                      │ (white bg)
+  └────────────────────────────────────────┘
+  
+  After removal:
+  ┌────────────────────────────────────────┐
+  │  🪙  💎  ⭐  🔑  ❤️                      │ (transparent)
+  └────────────────────────────────────────┘
+
+Step 3: Smart Frame Extraction (extract_frames_smart)
+  ✓ Connected component analysis on CLEANED image
+  ✓ Uses _extract_horizontal_with_gaps()
+  ✓ Detects actual content bounds (no white pixels)
+  
+  alpha = np.array(cleaned_sprite_sheet)[:, :, 3]
+  content_mask = alpha > 10
+  labeled_array, num_components = ndimage.label(content_mask)
+  
+  Detects pure sprite boundaries:
+  ┌────────────────────────────────────────┐
+  │ [🪙][💎][⭐][🔑][❤️]                   │
+  └────────────────────────────────────────┘
+     ↑    ↑    ↑    ↑    ↑
+  Component 1-5 with tight bounding boxes
+
+Step 4: Frame Processing
+  ✓ Extract bounding box for each component
+  ✓ Sort left-to-right
+  ✓ Filter noise (< 1% of largest sprite)
+  ✓ Center on consistent canvas (max_width × max_height)
+  
+  Frame 0: 🪙 → centered on 64×64 canvas
+  Frame 1: 💎 → centered on 64×64 canvas
+  Frame 2: ⭐ → centered on 64×64 canvas
+  Frame 3: 🔑 → centered on 64×64 canvas
+  Frame 4: ❤️ → centered on 64×64 canvas
+
+Step 5: Convert to Base64
+  ✓ Each frame saved as PNG
+  ✓ Encoded as data URL
+  
+Output: Array of properly segmented, clean sprites
+  [
+    "data:image/png;base64,iVBORw0KGgo...",  // 🪙
+    "data:image/png;base64,iVBORw0KGgo...",  // 💎
+    "data:image/png;base64,iVBORw0KGgo...",  // ⭐
+    "data:image/png;base64,iVBORw0KGgo...",  // 🔑
+    "data:image/png;base64,iVBORw0KGgo..."   // ❤️
+  ]
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                         KEY DIFFERENCES                                    ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────┬─────────────────────┬──────────────────────────┐
+│ Feature              │ BEFORE (Broken)     │ AFTER (Fixed)            │
+├──────────────────────┼─────────────────────┼──────────────────────────┤
+│ Layout Analysis      │ ❌ None             │ ✅ Claude Vision         │
+│ Background Removal   │ ❌ No               │ ✅ Yes (tolerance=40)    │
+│ Frame Detection      │ ❌ Raw CC analysis  │ ✅ Smart extraction      │
+│ Frame Centering      │ ❌ No               │ ✅ Centered on canvas    │
+│ Noise Filtering      │ ⚠️  Basic          │ ✅ Advanced (1% thresh)  │
+│ Consistent with Char │ ❌ Different logic  │ ✅ Same pipeline         │
+│ Sprite Quality       │ ⚠️  May have bg     │ ✅ Clean, transparent    │
+│ Frame Dimensions     │ ❌ Variable         │ ✅ Normalized            │
+└──────────────────────┴─────────────────────┴──────────────────────────┘
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                        CODE COMPARISON                                     ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+BEFORE:
+-------
+def segment_collectible_sprites(collectible_path: Path) -> List[str]:
+    sprite_sheet = Image.open(collectible_path).convert('RGBA')
+    alpha = np.array(sprite_sheet)[:, :, 3]
+    content_mask = alpha > 10
+    labeled_array, num_components = ndimage.label(content_mask)
+    # ... extract bounding boxes ...
+    # ... convert to base64 ...
+    return sprite_data_urls
+
+AFTER:
+------
+def segment_collectible_sprites(
+    collectible_path: Path,
+    sprite_analyzer: SpriteSheetAnalyzer  ← Uses analyzer
+) -> List[str]:
+    # Step 1: Analyze with Claude Vision
+    layout_info = sprite_analyzer.analyze_sprite_sheet_layout(collectible_path)
+    
+    # Step 2: Remove background
+    bg_remover = BackgroundRemover()
+    cleaned_img = bg_remover.remove_background(original_img, ...)
+    cleaned_img = bg_remover.auto_crop(cleaned_img)
+    
+    # Step 3: Smart extraction (handles gaps, centering, etc.)
+    frames, w, h = sprite_analyzer.extract_frames_smart(
+        cleaned_path, rows=layout_info['rows'], columns=layout_info['columns']
+    )
+    
+    # Step 4: Convert each frame to base64
+    for frame in frames:
+        buffer = io.BytesIO()
+        frame.save(buffer, format='PNG')
+        sprite_data_urls.append(f"data:image/png;base64,{...}")
+    
+    return sprite_data_urls
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                     IN-GAME RESULT                                         ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+BEFORE:
+-------
+// Phaser loads sprites
+collectibleSprites = ["data:...", "data:...", ...];  // May have white bg
+this.textures.addImage('collectible_0', sprite0);
+
+// Spawns in game
+Platform: ════════════════
+              🪙⬜          ← White background visible!
+              ↑
+          Collectible has white box around it
+
+
+AFTER:
+------
+// Phaser loads clean sprites
+collectibleSprites = ["data:...", "data:...", ...];  // Pure transparent bg
+this.textures.addImage('collectible_0', sprite0);
+
+// Spawns in game
+Platform: ════════════════
+              🪙            ← Clean sprite, no artifacts!
+              ↑
+          Collectible perfectly transparent
+
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                         SUMMARY                                            ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+The fix ensures collectible sprites go through the EXACT SAME PIPELINE as
+character sprites:
+
+1. ✅ Claude Vision analyzes layout
+2. ✅ Background removal cleans image
+3. ✅ Smart extraction finds actual content bounds
+4. ✅ Frames centered and normalized
+5. ✅ Clean, professional-looking sprites in game
+
+Result: Collectibles look as good as character sprites, with proper
+        transparency and consistent dimensions!
+

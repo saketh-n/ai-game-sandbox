@@ -60,20 +60,20 @@
     "output_format": "png"
   },
   "13193b1f5430a5e42b0e605b9db14519": {
-    "image_url": "https://v3b.fal.media/files/b/kangaroo/DrgueT-1zMFHn2rr9H4rt.png",
+    "image_url": "https://v3b.fal.media/files/b/koala/9hoOLPmU1wNOMoVpNuIKq.png",
     "prompt": "Create a sprite sheet of collectible items in the style of an 8-bit retro video game with a white background with the following wild jungle racing adventure",
     "category": "Collectible Item",
-    "timestamp": "2025-11-22T20:53:56.906339",
+    "timestamp": "2025-11-23T04:29:25.831179",
     "style": "8-bit retro pixel art",
     "additional_instructions": "",
     "image_size": "",
     "output_format": "png"
   },
   "79b1eebc5768f06f2bc006fb464f1012": {
-    "image_url": "https://v3b.fal.media/files/b/lion/BXcWpARPnEnLzC7V9MVvq.png",
+    "image_url": "https://v3b.fal.media/files/b/monkey/iakoqNMXv-CP5bh2gm0ph.png",
     "prompt": "Generate a 2d platformer background with the following wild jungle racing adventure, 8-bit graphics",
     "category": "Background",
-    "timestamp": "2025-11-22T20:53:57.011879",
+    "timestamp": "2025-11-23T04:30:52.685117",
     "style": "",
     "additional_instructions": "",
     "image_size": "landscape_4_3",
