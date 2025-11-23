@@ -70,7 +70,9 @@ class WebGameExporter:
         sprite_path: str,
         collectible_sprites: list = None,
         collectible_positions: list = None,
-        collectible_metadata: list = None
+        collectible_metadata: list = None,
+        mob_sprite_data_url: str = None,
+        mob_config: Dict = None
     ) -> str:
         """Generate complete HTML5 game"""
 
@@ -78,6 +80,13 @@ class WebGameExporter:
         collectible_sprites_json = json.dumps(collectible_sprites if collectible_sprites else [])
         collectible_positions_json = json.dumps(collectible_positions if collectible_positions else [])
         collectible_metadata_json = json.dumps(collectible_metadata if collectible_metadata else [])
+        
+        # Prepare mob data
+        has_mob = mob_sprite_data_url is not None and mob_config is not None
+        mob_sprite_url = mob_sprite_data_url if has_mob else ''
+        mob_frame_width = mob_config['frame_width'] if has_mob else 0
+        mob_frame_height = mob_config['frame_height'] if has_mob else 0
+        mob_num_frames = mob_config['num_frames'] if has_mob else 0
 
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -395,6 +404,31 @@ class WebGameExporter:
                     }});
                 }}
 
+                // Load mob sprite if provided
+                const mobSpritePath = '{mob_sprite_url}';
+                const hasMob = mobSpritePath && mobSpritePath.length > 0;
+                this.hasMob = hasMob;
+                
+                if (hasMob) {{
+                    console.log('Loading mob sprite...');
+                    if (mobSpritePath.startsWith('data:')) {{
+                        const mobImage = new Image();
+                        mobImage.onload = () => {{
+                            this.textures.addSpriteSheet('mob', mobImage, {{
+                                frameWidth: {mob_frame_width},
+                                frameHeight: {mob_frame_height}
+                            }});
+                            console.log('Mob sprite sheet loaded');
+                        }};
+                        mobImage.src = mobSpritePath;
+                    }} else {{
+                        this.load.spritesheet('mob', mobSpritePath, {{
+                            frameWidth: {mob_frame_width},
+                            frameHeight: {mob_frame_height}
+                        }});
+                    }}
+                }}
+
                 // Load collectible sprites and metadata
                 const collectibleSprites = {collectible_sprites_json};
                 const collectibleMetadata = {collectible_metadata_json};
@@ -634,6 +668,125 @@ class WebGameExporter:
                     console.log('Collectibles created with collision detection');
                 }}
 
+                // Create mobs if mob sprite is available
+                this.mobs = this.physics.add.group();
+                if (this.hasMob) {{
+                    console.log('Creating mobs...');
+                    // Generate 2-4 mobs based on available platforms
+                    const numMobs = Math.min(4, Math.max(2, Math.floor(platformData.length / 4)));
+                    const mobTargetHeight = 80;  // Slightly smaller than player
+                    const mobScale = mobTargetHeight / {mob_frame_height};
+                    const worldWidth = {config['physics']['bounds']['width']};
+                    const spawnX = {config['character']['spawn_x']};
+                    const spawnY = {config['character']['spawn_y']};
+                    const spawnSafeZone = 200;  // Pixels around spawn to avoid
+                    
+                    let mobsCreated = 0;
+                    let attempts = 0;
+                    const maxAttempts = platformData.length * 3;
+                    
+                    while (mobsCreated < numMobs && attempts < maxAttempts) {{
+                        attempts++;
+                        
+                        // Pick a random platform
+                        const platform = platformData[Math.floor(Math.random() * platformData.length)];
+                        const mobX = platform.x + platform.width / 2;
+                        const mobY = platform.y - 50;
+                        
+                        // Check if too close to player spawn
+                        const distanceToSpawn = Math.sqrt(
+                            Math.pow(mobX - spawnX, 2) + Math.pow(mobY - spawnY, 2)
+                        );
+                        if (distanceToSpawn < spawnSafeZone) {{
+                            continue;  // Too close to spawn, try another platform
+                        }}
+                        
+                        // Calculate patrol distance that stays within bounds
+                        // Base patrol distance on platform width, capped at 150
+                        const maxPatrolDist = Math.min(150, platform.width * 0.8);
+                        const basePatrolDist = 80 + Math.random() * (maxPatrolDist - 80);
+                        
+                        // Ensure patrol doesn't go off-screen
+                        const leftBound = mobX - basePatrolDist;
+                        const rightBound = mobX + basePatrolDist;
+                        
+                        // Clamp to world bounds
+                        const clampedLeftDist = Math.max(0, mobX - Math.max(0, leftBound));
+                        const clampedRightDist = Math.max(0, Math.min(worldWidth, rightBound) - mobX);
+                        
+                        // Use the smaller of the two to ensure symmetric patrol within bounds
+                        const finalPatrolDist = Math.min(clampedLeftDist, clampedRightDist);
+                        
+                        if (finalPatrolDist < 50) {{
+                            continue;  // Patrol range too small, skip this platform
+                        }}
+                        
+                        // Create the mob
+                        const mob = this.physics.add.sprite(mobX, mobY, 'mob');
+                        mob.setScale(mobScale);
+                        mob.setCollideWorldBounds(true);
+                        mob.setBounce(0.1);
+                        
+                        // Mob stats
+                        mob.setData('health', 20);
+                        mob.setData('maxHealth', 20);
+                        mob.setData('canDamage', true);  // Cooldown flag
+                        mob.setData('movementSpeed', 60 + Math.random() * 40);
+                        mob.setData('direction', Math.random() < 0.5 ? -1 : 1);
+                        mob.setData('patrolDistance', finalPatrolDist);
+                        mob.setData('startX', mobX);
+                        
+                        // Create health bar for mob
+                        const healthBarBg = this.add.graphics();
+                        healthBarBg.fillStyle(0x8B0000, 0.5);
+                        healthBarBg.fillRect(0, 0, 50, 6);
+                        
+                        const healthBarFill = this.add.graphics();
+                        healthBarFill.fillStyle(0xFF0000, 1);
+                        healthBarFill.fillRect(0, 0, 50, 6);
+                        
+                        mob.setData('healthBarBg', healthBarBg);
+                        mob.setData('healthBarFill', healthBarFill);
+                        
+                        this.mobs.add(mob);
+                        mobsCreated++;
+                        
+                        console.log('Mob ' + mobsCreated + ' spawned at (' + Math.round(mobX) + ', ' + Math.round(mobY) + 
+                                    ') with patrol range: ' + Math.round(finalPatrolDist) + 'px');
+                    }}
+                    
+                    // Mob animations
+                    this.anims.create({{
+                        key: 'mob_walk',
+                        frames: this.anims.generateFrameNumbers('mob', {{
+                            start: 0,
+                            end: {mob_num_frames} - 1
+                        }}),
+                        frameRate: 10,
+                        repeat: -1
+                    }});
+                    
+                    // Mob collision with platforms
+                    this.physics.add.collider(this.mobs, this.platforms, null, (mob, platform) => {{
+                        const mobBottom = mob.body.y + mob.body.height;
+                        const platformTop = platform.body.y;
+                        if (mob.body.velocity.y < 0) return false;
+                        if (mobBottom <= platformTop + 10) return true;
+                        return false;
+                    }}, this);
+                    
+                    // Player-Mob collision (combat)
+                    this.physics.add.overlap(
+                        this.player,
+                        this.mobs,
+                        this.handleCombat,
+                        null,
+                        this
+                    );
+                    
+                    console.log('Created ' + mobsCreated + ' mobs (attempted ' + attempts + ' placements)');
+                }}
+
                 // Set up controls
                 this.cursors = this.input.keyboard.createCursorKeys();
                 this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -696,6 +849,102 @@ class WebGameExporter:
                         console.log('Collected "' + name + '" (' + statusEffect + ')! Total: ' + this.collectedCount);
                     }}
                 }});
+            }}
+
+            handleCombat(player, mob) {{
+                // Check if mob can deal damage (cooldown check)
+                const canDamage = mob.getData('canDamage');
+                if (!canDamage) return;
+                
+                // Mark as unable to damage temporarily
+                mob.setData('canDamage', false);
+                
+                // RNG damage between 1-10 for both
+                const damageToPlayer = Math.floor(Math.random() * 10) + 1;
+                const damageToMob = Math.floor(Math.random() * 10) + 1;
+                
+                // Apply damage to player
+                this.playerHealth = Math.max(0, this.playerHealth - damageToPlayer);
+                console.log('Player took ' + damageToPlayer + ' damage! Health: ' + this.playerHealth);
+                
+                // Apply damage to mob
+                const mobHealth = mob.getData('health');
+                const newMobHealth = Math.max(0, mobHealth - damageToMob);
+                mob.setData('health', newMobHealth);
+                console.log('Mob took ' + damageToMob + ' damage! Health: ' + newMobHealth);
+                
+                // Flash effects for both
+                this.tweens.add({{
+                    targets: player,
+                    alpha: {{ from: 1, to: 0.3 }},
+                    duration: 100,
+                    yoyo: true,
+                    repeat: 2
+                }});
+                
+                this.tweens.add({{
+                    targets: mob,
+                    alpha: {{ from: 1, to: 0.3 }},
+                    duration: 100,
+                    yoyo: true,
+                    repeat: 2
+                }});
+                
+                // Knockback
+                const knockbackDirection = player.x < mob.x ? -1 : 1;
+                player.setVelocityX(knockbackDirection * -200);
+                mob.setVelocityX(knockbackDirection * 200);
+                
+                // Update health bar
+                this.updateMobHealthBar(mob);
+                this.updateStatusBar();
+                
+                // Check if mob is dead
+                if (newMobHealth <= 0) {{
+                    this.killMob(mob);
+                }} else {{
+                    // Re-enable damage after 1 second cooldown
+                    this.time.delayedCall(1000, () => {{
+                        if (mob && mob.active) {{
+                            mob.setData('canDamage', true);
+                        }}
+                    }});
+                }}
+            }}
+
+            killMob(mob) {{
+                console.log('Mob defeated!');
+                
+                // Destroy health bars
+                const healthBarBg = mob.getData('healthBarBg');
+                const healthBarFill = mob.getData('healthBarFill');
+                if (healthBarBg) healthBarBg.destroy();
+                if (healthBarFill) healthBarFill.destroy();
+                
+                // Death animation
+                this.tweens.add({{
+                    targets: mob,
+                    alpha: 0,
+                    angle: 360,
+                    scale: 0,
+                    duration: 300,
+                    onComplete: () => {{
+                        mob.destroy();
+                    }}
+                }});
+            }}
+
+            updateMobHealthBar(mob) {{
+                const health = mob.getData('health');
+                const maxHealth = mob.getData('maxHealth');
+                const healthPercent = health / maxHealth;
+                
+                const healthBarFill = mob.getData('healthBarFill');
+                if (healthBarFill) {{
+                    healthBarFill.clear();
+                    healthBarFill.fillStyle(0xFF0000, 1);
+                    healthBarFill.fillRect(0, 0, 50 * healthPercent, 6);
+                }}
             }}
 
             applyCollectibleEffect(statusEffect) {{
@@ -834,6 +1083,53 @@ class WebGameExporter:
                     this.player.setPosition(this.spawnX, this.spawnY);
                     this.player.setVelocity(0, 0);
                     this.jumpsRemaining = {config['player']['max_jumps']};
+                }}
+
+                // Update mobs (AI patrol)
+                if (this.hasMob && this.mobs) {{
+                    this.mobs.getChildren().forEach(mob => {{
+                        if (!mob.active) return;
+                        
+                        // Patrol AI
+                        const startX = mob.getData('startX');
+                        const patrolDistance = mob.getData('patrolDistance');
+                        const movementSpeed = mob.getData('movementSpeed');
+                        const worldWidth = this.physics.world.bounds.width;
+                        let direction = mob.getData('direction');
+                        
+                        // Check world bounds first (with margin for sprite size)
+                        const mobMargin = 20;  // Buffer from edge
+                        if (mob.x <= mobMargin && direction < 0) {{
+                            // Hit left edge, reverse to go right
+                            direction = 1;
+                            mob.setData('direction', direction);
+                        }} else if (mob.x >= worldWidth - mobMargin && direction > 0) {{
+                            // Hit right edge, reverse to go left
+                            direction = -1;
+                            mob.setData('direction', direction);
+                        }}
+                        // Change direction if mob reached patrol boundaries
+                        else if (Math.abs(mob.x - startX) > patrolDistance) {{
+                            direction = -direction;
+                            mob.setData('direction', direction);
+                        }}
+                        
+                        // Move mob
+                        mob.setVelocityX(movementSpeed * direction);
+                        mob.play('mob_walk', true);
+                        // Mob faces left (they're already flipped in sprite)
+                        mob.setFlipX(direction > 0);
+                        
+                        // Update health bar position (float above mob)
+                        const healthBarBg = mob.getData('healthBarBg');
+                        const healthBarFill = mob.getData('healthBarFill');
+                        if (healthBarBg && healthBarFill) {{
+                            const barX = mob.x - 25;
+                            const barY = mob.y - mob.displayHeight / 2 - 15;
+                            healthBarBg.setPosition(barX, barY);
+                            healthBarFill.setPosition(barX, barY);
+                        }}
+                    }});
                 }}
 
                 // Update stats display

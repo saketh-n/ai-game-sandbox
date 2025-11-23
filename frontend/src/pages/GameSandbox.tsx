@@ -54,6 +54,7 @@ const GameSandbox = () => {
         body: JSON.stringify({
           background_url: generatedImages.background,
           character_url: generatedImages.mainCharacter,
+          mob_url: generatedImages.mob || null,
           collectible_url: generatedImages.collectible || null,
           num_frames: 8,
           game_name: 'AIGeneratedPlatformer',
