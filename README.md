@@ -4,6 +4,22 @@ A beautiful, modern web application for generating video game assets using AI, w
 
 ## Features
 
+```
+ai-asset-gen-sandbox/
+├── frontend/
+│   ├── src/
+│   │   ├── components/      # Reusable UI components
+│   │   ├── pages/          # Route pages (Home, GenerateAssets)
+│   │   ├── context/        # React Context for state management
+│   │   ├── App.tsx         # Router setup
+│   │   └── main.tsx        # Entry point
+│   └── package.json
+├── backend/
+│   ├── main.py             # FastAPI server
+│   ├── cache_manager.py    # Caching system
+│   └── requirements.txt
+└── README.md
+```
 - 🎮 Video game theme input with intuitive UI
 - 🎨 Beautiful gradient background with glassmorphism design
 - ⚡ Built with React, TypeScript, and Tailwind CSS
@@ -45,14 +61,11 @@ cd backend
 uv sync
 ```
 
-This will create a virtual environment (`backend/.venv`) and install all dependencies.
-
 3. Set up your FAL API key:
 ```bash
 cp .env.example .env
 # Edit .env and add your FAL_KEY from https://fal.ai/dashboard/keys
 ```
-
 4. Run the example or use the CLI:
 ```bash
 # Run example script
@@ -156,6 +169,56 @@ uv run generate-image "Fantasy sword concept" \
 - `uv sync` - Install dependencies and set up virtual environment
 - `uv run example.py` - Run image generation examples
 - `uv run generate-image "your prompt"` - CLI tool for image generation
+## Usage
+
+1. **Enter a theme**: Type a video game theme in the input box (e.g., "cyberpunk noir detective game")
+2. **Press Enter**: The frontend sends your theme to the backend
+3. **AI Processing**: Backend calls Claude API to generate detailed asset prompts
+4. **View Results**: See AI-generated prompts organized by:
+   - 🎮 **Main Character** - Multiple variations with detailed descriptions
+   - 🌍 **Environment Assets** - Ground tiles, platforms, props, trees, rocks, etc.
+   - 👥 **NPCs** - Allies, enemies, and neutral characters
+   - 🎨 **Background Scenes** - Full scene compositions for different levels/areas
+5. **Edit & Copy**: Each prompt is editable and has a copy button for easy use
+
+## 📚 API Documentation
+
+Once the backend is running, visit:
+- **Swagger UI**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
+
+### Main Endpoints
+
+**POST** `/generate-asset-prompts`
+- Generates asset prompts (uses cache if available)
+- Request: `{ "prompt": "game theme" }`
+- Response: `{ "result": "...", "cached": false }`
+
+**GET** `/cached-prompts`
+- Returns list of all cached prompts
+- Response: `{ "prompts": [...], "count": 5 }`
+
+**POST** `/fetch-cached-prompt`
+- Fetches full result for a cached prompt
+- Request: `{ "prompt": "exact prompt text" }`
+- Response: `{ "prompt": "...", "result": "...", "timestamp": "..." }`
+
+See `CACHING_FEATURE.md` for detailed caching documentation.
+This will create a virtual environment (`backend/.venv`) and install all dependencies.
+
+- ✨ **Beautiful UI**: Modern gradient design with glassmorphism effects
+- 🤖 **AI-Powered**: Uses Claude Sonnet 4.5 for intelligent prompt generation
+- ⚡ **Fast & Responsive**: Built with Vite and FastAPI
+- 🔄 **Loading States**: Smooth animations while waiting for AI responses
+- ❌ **Error Handling**: Clear error messages if something goes wrong
+- 📝 **Type-Safe**: Full TypeScript support on frontend
+- 📋 **Structured Output**: Organized, collapsible sections for each asset category
+- ✏️ **Editable Prompts**: Modify any generated prompt in real-time
+- 📄 **One-Click Copy**: Copy button for each prompt variation
+- 🎯 **Comprehensive Assets**: Characters, environments, NPCs, and backgrounds all generated at once
+- 💾 **Smart Caching**: Instant results for previously generated prompts (saves time & API costs)
+- 🕒 **Prompt History**: View and reload recent prompts with one click
+- ⚡ **Instant Loading**: Cached prompts load in <1 second vs 5-15 seconds for new generation
 
 ## Tech Stack
 
@@ -195,6 +258,3 @@ Make this item be visible within the center of the image. Make the background wh
 ## License
 
 MIT
-
-
-

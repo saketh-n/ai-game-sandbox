@@ -6,6 +6,13 @@ from loguru import logger
 import os
 from dotenv import load_dotenv
 import traceback
+from typing import List
+import asyncio
+import json
+from cache_manager import cache
+
+from image_generation.generator import ImageGenerator
+from image_generation.config import ImageGenerationConfig
 
 # Load environment variables
 load_dotenv()
@@ -49,6 +56,39 @@ class PromptRequest(BaseModel):
 
 class PromptResponse(BaseModel):
     result: str
+    cached: bool = False
+
+class CachedPromptItem(BaseModel):
+    prompt: str
+    timestamp: str
+    preview: str
+
+class CachedPromptsResponse(BaseModel):
+    prompts: List[CachedPromptItem]
+    count: int
+
+class FetchCachedRequest(BaseModel):
+    prompt: str
+
+class CachedResultResponse(BaseModel):
+    prompt: str
+    result: str
+    timestamp: str
+
+class GenerateImageRequest(BaseModel):
+    prompt: str = Field(..., description="Image generation prompt")
+    category: str = Field(..., description="Asset category")
+    style: str = Field(default="", description="Style specification")
+    additional_instructions: str = Field(default="", description="Additional generation instructions")
+    image_size: str = Field(default="", description="Image size specification")
+    output_format: str = Field(default="png", description="Output format")
+
+class GenerateImageResponse(BaseModel):
+    image_url: str
+    prompt: str
+    category: str
+
+image_generator = ImageGenerator(api_key=os.getenv("FAL_KEY"))
 
 
 @app.get("/")
@@ -60,26 +100,44 @@ async def root():
 async def generate_asset_prompts(request: PromptRequest):
     """
     Generate detailed image generation prompts for game assets (characters, environments, NPCs, backgrounds)
-    using Claude 4.5 Sonnet.
+    using Claude 4.5 Sonnet. Results are cached to save time on repeated requests.
     """
     request_id = f"req_{os.urandom(4).hex()}"  # Simple request tracing
     logger.info(f"[{request_id}] Received request: {request.prompt[:100]}...")
 
+    # Check cache first
+    cached_result = cache.get(request.prompt)
+    if cached_result:
+        logger.info(f"[{request_id}] Cache hit! Returning cached result")
+        return PromptResponse(result=cached_result, cached=True)
+
+    logger.info(f"[{request_id}] Cache miss. Calling Claude API...")
+
     try:
-        claude_prompt = f"""Based on the following video game description, generate high-quality, detailed prompts suitable for image generation models (DALL-E, Midjourney, Stable Diffusion, Flux, etc.).
+        claude_prompt = f"""You are a professional game artist assistant. Based on the following video game description, generate a theme and character sprite prompt.
 
-Game Description:
-\"{request.prompt}\"
+        Game Description:
+        \"{request.prompt}\"
 
-Please generate prompts for:
-1. Main character (hero/protagonist) - multiple variations if applicable
-2. Environment assets - first list out what key environmental elements are needed, then provide detailed prompts for each
-3. NPCs (non-player characters) - allies, enemies, merchants, etc.
-4. Backgrounds / scenes - key locations, menus, loading screens
+        Return your response as a valid JSON object (no markdown, no ```json blocks, no extra text) with this exact structure:
 
-Make all prompts highly descriptive, include art style suggestions, lighting, mood, composition tips, and specific details that help generate consistent and professional-looking game assets.
+        {{
+        "theme": "A concise theme description (e.g., 'space adventure', 'medieval fantasy', 'cyberpunk city')",
+        "main_character": {{
+            "prompt": "2D sprite sheet of [CHARACTER] wearing [OUTFIT/GEAR], pixel art style for platformer game. Eight frames of walking animation cycle displayed side by side from left to right. Frame 1: neutral standing pose. Frame 2: left front leg lifting. Frame 3: left front leg fully lifted mid-step. Frame 4: left front leg descending, right front leg preparing. Frame 5: both front legs planted transition. Frame 6: right front leg lifting. Frame 7: right front leg fully lifted mid-step. Frame 8: right front leg descending, completing full walk cycle. Consistent character design across all frames with clear distinct poses. Clean white background, retro game sprite aesthetic, sharp pixel details, [COLOR AND VISUAL DETAILS]",
+            "style": "pixel art sprite sheet, 2D platformer game graphics, retro gaming aesthetic",
+            "additional_instructions": "Ensure perfect consistency in character design across all eight frames. Each frame should show clear progression of complete walking cycle with distinct leg positions. Frames arranged horizontally in sequence. Clean separation between frames. Wide horizontal composition to fit all 8 frames."
+        }}
+        }}
 
-Format your response clearly with headings."""
+        Rules:
+        - Output ONLY the raw JSON. No explanations, no markdown, no trailing text.
+        - Include a "theme" field with a concise theme description.
+        - Include ONLY the "main_character" field with ONE character sprite prompt.
+        - For main_character: MUST include detailed 8-frame walking animation cycle description.
+        - Replace bracketed placeholders with theme-appropriate content based on the game description.
+        - Be creative and detailed with character design.
+        - Use double quotes for all JSON keys and strings."""
 
         logger.info(f"[{request_id}] Calling Claude 4.5 Sonnet...")
 
@@ -104,7 +162,68 @@ Format your response clearly with headings."""
 
         logger.success(f"[{request_id}] Successfully generated asset prompts ({len(response_text)} chars)")
 
-        return PromptResponse(result=response_text)
+        # Auto-detect and remove markdown code fences if present
+        if response_text.startswith("```"):
+            logger.info(f"[{request_id}] Detected markdown code fences, removing...")
+            # Remove ```json or ``` at start and ``` at end
+            lines = response_text.split('\n')
+            if lines[0].startswith("```"):
+                lines = lines[1:]  # Remove first line with ```json
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]  # Remove last line with ```
+            response_text = '\n'.join(lines).strip()
+            logger.info(f"[{request_id}] Code fences removed")
+
+        # Parse the Claude response
+        try:
+            claude_data = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            logger.error(f"[{request_id}] Failed to parse Claude JSON response: {str(e)}")
+            logger.error(f"[{request_id}] Response text: {response_text}")
+            raise ValueError(f"Invalid JSON from Claude: {str(e)}")
+
+        # Extract theme and main character
+        theme = claude_data.get("theme", "")
+        main_character = claude_data.get("main_character", {})
+
+        # Create background and collectible prompts with theme interpolation
+        background_prompt = {
+            "prompt": f"Generate a 2d platformer background with the following {theme}, 8-bit graphics",
+            "image_size": "landscape_4_3",
+            "output_format": "png"
+        }
+
+        collectible_prompt = {
+            "prompt": f"Create a sprite sheet of collectible items in the style of an 8-bit retro video game with a white background with the following {theme}",
+            "style": "8-bit retro pixel art",
+            "output_format": "png"
+        }
+
+        # Build final response structure
+        final_response = {
+            "theme": theme,
+            "main_character": {
+                "description": f"Main character for {theme}",
+                "variations": [main_character]
+            },
+            "background": {
+                "description": f"Background for {theme}",
+                "variations": [background_prompt]
+            },
+            "collectible_item": {
+                "description": f"Collectible items for {theme}",
+                "variations": [collectible_prompt]
+            }
+        }
+
+        # Convert back to JSON string for caching and response
+        final_json = json.dumps(final_response, indent=2)
+
+        # Cache the result
+        cache.set(request.prompt, final_json)
+        logger.info(f"[{request_id}] Result cached for future requests")
+
+        return PromptResponse(result=final_json, cached=False)
 
     # === Specific Anthropic Errors ===
     except AuthenticationError as e:
@@ -156,6 +275,134 @@ Format your response clearly with headings."""
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred. Check server logs for details."
+        ) from e
+
+
+@app.get("/cached-prompts", response_model=CachedPromptsResponse, status_code=status.HTTP_200_OK)
+async def get_cached_prompts():
+    """
+    Get list of all cached prompts with metadata (timestamp, preview).
+    This endpoint is called on frontend load to show previously generated prompts.
+    """
+    try:
+        prompts = cache.get_all_prompts()
+        logger.info(f"Retrieved {len(prompts)} cached prompts")
+        return CachedPromptsResponse(prompts=prompts, count=len(prompts))
+    except Exception as e:
+        logger.error(f"Error retrieving cached prompts: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve cached prompts"
+        ) from e
+
+
+@app.post("/fetch-cached-prompt", response_model=CachedResultResponse, status_code=status.HTTP_200_OK)
+async def fetch_cached_prompt(request: FetchCachedRequest):
+    """
+    Fetch the full generated result for a specific cached prompt.
+    Returns the complete asset generation data for the given prompt.
+    """
+    try:
+        cached_data = cache.get_cached_result(request.prompt)
+        
+        if not cached_data:
+            logger.warning(f"Cached prompt not found: {request.prompt[:100]}...")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Cached prompt not found"
+            )
+        
+        logger.info(f"Retrieved cached result for prompt: {request.prompt[:100]}...")
+        return CachedResultResponse(**cached_data)
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching cached prompt: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch cached prompt"
+        ) from e
+
+
+@app.delete("/cache/{prompt}")
+async def delete_cached_prompt(prompt: str):
+    """
+    Delete a specific cached prompt.
+    """
+    try:
+        success = cache.delete(prompt)
+        if success:
+            logger.info(f"Deleted cached prompt: {prompt[:100]}...")
+            return {"message": "Cached prompt deleted successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Cached prompt not found"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting cached prompt: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete cached prompt"
+        ) from e
+
+
+@app.delete("/cache")
+async def clear_cache():
+    """
+    Clear all cached prompts.
+    """
+    try:
+        cache.clear()
+        logger.info("Cache cleared successfully")
+        return {"message": "Cache cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing cache: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear cache"
+        ) from e
+
+
+@app.post("/generate-image-asset", response_model=GenerateImageResponse, status_code=status.HTTP_200_OK)
+async def generate_image_asset(request: GenerateImageRequest):
+    """
+    Generate an image asset from a prompt. 
+    Currently a dummy implementation with 30-second timeout that returns a placeholder image.
+    """
+    request_id = f"img_{os.urandom(4).hex()}"
+    logger.info(f"[{request_id}] Image generation request for category: {request.category}")
+    logger.info(f"[{request_id}] Prompt: {request.prompt[:100]}...")
+
+    image_generator_response = image_generator.generate(
+        config=ImageGenerationConfig(
+            model_name="fal-ai/alpha-image-232/text-to-image",
+            prompt=request.prompt
+        )
+    ) 
+    
+    try:
+        # Return a placeholder image URL (using picsum.photos for demo)
+        # Different seed based on category for variety
+        category_seed = abs(hash(request.category)) % 1000
+        image_url = image_generator_response['images'][0]['url']
+        
+        logger.info(f"[{request_id}] Image generated successfully: {image_url}")
+        
+        return GenerateImageResponse(
+            image_url=image_url,
+            prompt=request.prompt,
+            category=request.category
+        )
+    
+    except Exception as e:
+        logger.error(f"[{request_id}] Error generating image: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate image: {str(e)}"
         ) from e
 
 
