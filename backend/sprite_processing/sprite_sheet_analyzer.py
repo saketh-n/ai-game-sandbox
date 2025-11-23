@@ -248,13 +248,13 @@ Please respond in this EXACT JSON format (no markdown, just JSON):
         columns: int
     ) -> Tuple[list[Image.Image], int, int]:
         """
-        Smart frame extraction that divides image into grid cells
+        Smart frame extraction using gap detection between sprites
 
         This method:
-        1. Divides the sprite sheet into equal grid cells
-        2. Extracts each cell without aggressive cropping
-        3. Finds the maximum content bounding box across ALL frames
-        4. Applies the same bounding box to all frames for consistency
+        1. Finds transparent gaps (vertical columns) between sprites
+        2. Uses those gaps as natural split points
+        3. Crops each sprite to its actual content bounds
+        4. Centers all sprites on consistent-sized canvases
 
         Args:
             image_path: Path to sprite sheet
@@ -269,6 +269,128 @@ Please respond in this EXACT JSON format (no markdown, just JSON):
         if sprite_sheet.mode != 'RGBA':
             sprite_sheet = sprite_sheet.convert('RGBA')
 
+        # For horizontal layouts (1 row), use gap detection
+        if rows == 1:
+            return self._extract_horizontal_with_gaps(sprite_sheet, columns)
+
+        # For grid layouts, fall back to cell-based extraction
+        return self._extract_grid_based(sprite_sheet, rows, columns)
+
+    def _extract_horizontal_with_gaps(
+        self,
+        sprite_sheet: Image.Image,
+        expected_frames: int
+    ) -> Tuple[list[Image.Image], int, int]:
+        """
+        Extract frames using connected component analysis (flood fill)
+
+        This finds cohesive regions of pixels regardless of:
+        - Spacing between sprites
+        - Gaps within sprites (like between body and tail)
+        - Grid alignment
+
+        Args:
+            sprite_sheet: PIL Image in RGBA mode
+            expected_frames: Expected number of frames
+
+        Returns:
+            Tuple of (frames_list, frame_width, frame_height)
+        """
+        from scipy import ndimage
+
+        alpha = np.array(sprite_sheet)[:, :, 3]
+
+        # Create binary mask (True = has content, False = transparent)
+        content_mask = alpha > 10
+
+        # Label connected components
+        # structure defines what counts as "connected" (including diagonals)
+        structure = np.ones((3, 3), dtype=int)
+        labeled_array, num_components = ndimage.label(content_mask, structure=structure)
+
+        print(f"  Found {num_components} connected components")
+
+        # Extract bounding box for each component
+        component_boxes = []
+        for i in range(1, num_components + 1):
+            # Find pixels belonging to this component
+            component_mask = labeled_array == i
+            rows, cols = np.where(component_mask)
+
+            if len(rows) == 0:
+                continue
+
+            # Get bounding box
+            min_row, max_row = rows.min(), rows.max()
+            min_col, max_col = cols.min(), cols.max()
+
+            # Calculate area (to filter out noise)
+            area = (max_row - min_row) * (max_col - min_col)
+
+            component_boxes.append({
+                'id': i,
+                'left': int(min_col),
+                'right': int(max_col + 1),
+                'top': int(min_row),
+                'bottom': int(max_row + 1),
+                'area': area
+            })
+
+        # Sort by horizontal position (left to right)
+        component_boxes.sort(key=lambda b: b['left'])
+
+        # Filter out very small components (likely noise)
+        if len(component_boxes) > 0:
+            max_area = max(b['area'] for b in component_boxes)
+            min_area_threshold = max_area * 0.01  # Keep components > 1% of largest
+            component_boxes = [b for b in component_boxes if b['area'] > min_area_threshold]
+
+        print(f"  After filtering: {len(component_boxes)} sprites detected")
+
+        # If we don't have the expected number, fall back
+        if len(component_boxes) != expected_frames:
+            print(f"  ⚠️  Connected components found {len(component_boxes)} sprites, expected {expected_frames}")
+            print(f"  Falling back to grid-based extraction")
+            return self._extract_grid_based(sprite_sheet, 1, expected_frames)
+
+        # Extract each sprite using its bounding box
+        frames = []
+        max_frame_width = 0
+        max_frame_height = 0
+
+        for box in component_boxes:
+            # Crop to bounding box
+            sprite = sprite_sheet.crop((box['left'], box['top'], box['right'], box['bottom']))
+
+            frames.append(sprite)
+            max_frame_width = max(max_frame_width, sprite.width)
+            max_frame_height = max(max_frame_height, sprite.height)
+
+        print(f"  Max content size: {max_frame_width}×{max_frame_height}px")
+
+        # Center all frames on consistent canvas
+        centered_frames = []
+        for frame in frames:
+            canvas = Image.new('RGBA', (max_frame_width, max_frame_height), (0, 0, 0, 0))
+            x_offset = (max_frame_width - frame.width) // 2
+            y_offset = (max_frame_height - frame.height) // 2
+            canvas.paste(frame, (x_offset, y_offset), frame)
+            centered_frames.append(canvas)
+
+        print(f"  ✓ Extracted {len(centered_frames)} sprites using connected components")
+        print(f"  ✓ All frames centered on {max_frame_width}×{max_frame_height}px canvas")
+
+        return centered_frames, max_frame_width, max_frame_height
+
+    def _extract_grid_based(
+        self,
+        sprite_sheet: Image.Image,
+        rows: int,
+        columns: int
+    ) -> Tuple[list[Image.Image], int, int]:
+        """
+        Extract frames using equal grid division (fallback method)
+        """
         # Calculate cell dimensions (including any spacing)
         cell_width = sprite_sheet.width // columns
         cell_height = sprite_sheet.height // rows
@@ -379,15 +501,12 @@ Please respond in this EXACT JSON format (no markdown, just JSON):
         print(f"📊 Layout detected: {layout_info['layout_type']} ({layout_info['rows']}×{layout_info['columns']})")
         print(f"   Frames: {layout_info['total_frames']} @ {layout_info['frame_width']}×{layout_info['frame_height']}px")
 
-        # If already horizontal, just copy the file
-        if layout_info['layout_type'] == 'horizontal' and layout_info['rows'] == 1:
-            print("✓ Already in horizontal layout, copying file...")
-            import shutil
-            shutil.copy(image_path, output_path)
-            return output_path, layout_info
-
-        # Extract frames from grid using smart content-based extraction
-        print("✂️  Extracting frames from grid (smart mode)...")
+        # ALWAYS extract frames using smart content-based extraction
+        # This is necessary even for horizontal layouts because:
+        # 1. The layout_info dimensions come from Claude Vision's analysis of the ORIGINAL image
+        # 2. After background removal, the actual dimensions may be different
+        # 3. We need to detect actual content bounds from the CLEANED image
+        print("✂️  Extracting frames with content-edge detection...")
         frames, actual_frame_width, actual_frame_height = self.extract_frames_smart(
             image_path,
             rows=layout_info['rows'],
@@ -413,13 +532,14 @@ Please respond in this EXACT JSON format (no markdown, just JSON):
         print(f"✓ Rearranged sprite sheet saved to: {output_path}")
 
         # Update layout info with actual detected frame dimensions
+        # Convert numpy types to Python types for JSON serialization
         rearranged_info = {
             **layout_info,
             'layout_type': 'horizontal',
             'rows': 1,
             'columns': layout_info['total_frames'],
-            'frame_width': actual_frame_width,  # Use actual detected size
-            'frame_height': actual_frame_height,  # Use actual detected size
+            'frame_width': int(actual_frame_width),  # Convert from numpy.int64 to Python int
+            'frame_height': int(actual_frame_height),  # Convert from numpy.int64 to Python int
             'original_layout': f"{layout_info['rows']}×{layout_info['columns']}",
             'original_frame_width': layout_info['frame_width'],  # Keep Claude's estimate
             'original_frame_height': layout_info['frame_height']  # Keep Claude's estimate

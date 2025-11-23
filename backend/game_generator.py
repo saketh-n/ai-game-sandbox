@@ -186,82 +186,87 @@ Only return the JSON, no other text."""
         """
         print(f"\n🎨 Processing character sprite {sprite_path.name}...")
 
-        # STEP 1: Analyze sprite sheet layout and rearrange if needed
+        # NEW FLOW: Clean FIRST, then extract based on actual content edges
+
+        # STEP 1: Analyze sprite sheet layout
         import sys
-        print(f"  Analyzing sprite sheet layout...")
+        print(f"  📊 Analyzing sprite sheet layout...")
         sys.stdout.flush()
         layout_info = self.sprite_analyzer.analyze_sprite_sheet_layout(sprite_path)
 
         print(f"  Layout: {layout_info['layout_type']} ({layout_info['rows']}×{layout_info['columns']})")
         print(f"  Total frames: {layout_info['total_frames']}")
-        print(f"  BEFORE override - num_frames parameter: {num_frames}")
         sys.stdout.flush()
 
         # ALWAYS use the detected frame count from Claude Vision
         detected_frames = layout_info['total_frames']
         if detected_frames != num_frames:
-            print(f"\n⚠️⚠️⚠️ FRAME COUNT MISMATCH DETECTED ⚠️⚠️⚠️")
+            print(f"\n⚠️  FRAME COUNT MISMATCH ⚠️")
             print(f"  Requested: {num_frames}, Detected: {detected_frames}")
             num_frames = detected_frames  # Override!
-            print(f"  AFTER override - num_frames is now: {num_frames}\n")
+            print(f"  Using detected count: {num_frames}\n")
             sys.stdout.flush()
         else:
             print(f"  ✓ Frame counts match: {num_frames}")
             sys.stdout.flush()
 
-        # If it's a grid layout, rearrange to horizontal
-        if layout_info['layout_type'] == 'grid' and layout_info['rows'] > 1:
-            print(f"  ⚙️  Converting grid layout to horizontal strip...")
-            temp_sprite_path = self.output_dir / "assets" / f"rearranged_{sprite_path.name}"
-            temp_sprite_path.parent.mkdir(parents=True, exist_ok=True)
+        # STEP 2: Remove background from ORIGINAL sprite sheet FIRST
+        print(f"  🧹 Removing background from original sprite sheet...")
+        sys.stdout.flush()
+        original_img = Image.open(sprite_path)
+        if original_img.mode != 'RGBA':
+            original_img = original_img.convert('RGBA')
 
-            sprite_path, layout_info = self.sprite_analyzer.rearrange_to_horizontal(
-                sprite_path,
-                temp_sprite_path,
-                layout_info=layout_info
-            )
-
-        # Use detected frame dimensions if not provided
-        if frame_width is None:
-            frame_width = layout_info['frame_width']
-        if frame_height is None:
-            frame_height = layout_info['frame_height']
-
-        # STEP 2: Load sprite sheet (possibly rearranged)
-        sprite_img = Image.open(sprite_path)
-        sheet_width, sheet_height = sprite_img.size
-        print(f"  Final sprite size: {sheet_width}x{sheet_height}px")
-
-        # Remove white background
-        print(f"  Removing background...")
-        processed_img = self.bg_remover.remove_background(
-            sprite_img,
+        cleaned_img = self.bg_remover.remove_background(
+            original_img,
             background_color=(255, 255, 255),  # White background
             tolerance=40
         )
 
         # Auto-crop to remove excess transparent space
-        processed_img = self.bg_remover.auto_crop(processed_img, padding=5)
-        cropped_width, cropped_height = processed_img.size
-        print(f"  ✓ Background removed and cropped: {cropped_width}x{cropped_height}px")
+        cleaned_img = self.bg_remover.auto_crop(cleaned_img, padding=5)
+        print(f"  ✓ Background removed and cropped: {cleaned_img.size[0]}x{cleaned_img.size[1]}px")
+        sys.stdout.flush()
 
-        # Auto-detect frame dimensions if not provided
-        if frame_width is None:
-            frame_width = cropped_width // num_frames
-            print(f"  Auto-calculated frame_width: {cropped_width} / {num_frames} = {frame_width}px")
-        if frame_height is None:
-            frame_height = cropped_height
-            print(f"  Auto-calculated frame_height: {cropped_height}px")
+        # Save the cleaned sprite sheet temporarily
+        cleaned_sprite_path = self.output_dir / "assets" / f"cleaned_{sprite_path.name}"
+        cleaned_sprite_path.parent.mkdir(parents=True, exist_ok=True)
+        cleaned_img.save(cleaned_sprite_path)
+
+        # STEP 3: NOW do smart extraction on the CLEANED image
+        # This ensures frame boundaries are based on actual content edges, not pre-removal pixels
+        print(f"  ✂️  Extracting frames using content-edge detection on cleaned image...")
+        sys.stdout.flush()
+        temp_sprite_path = self.output_dir / "assets" / f"rearranged_{sprite_path.name}"
+        temp_sprite_path.parent.mkdir(parents=True, exist_ok=True)
+
+        sprite_path, rearranged_info = self.sprite_analyzer.rearrange_to_horizontal(
+            cleaned_sprite_path,  # Use cleaned image!
+            temp_sprite_path,
+            layout_info=layout_info
+        )
+
+        # Update num_frames with actual extracted frame count
+        num_frames = rearranged_info['total_frames']
+        frame_width = rearranged_info['frame_width']
+        frame_height = rearranged_info['frame_height']
+
+        print(f"  ✓ Extracted {num_frames} frames at {frame_width}x{frame_height}px each")
+        sys.stdout.flush()
+
+        # STEP 4: Load the final processed sprite sheet
+        processed_img = Image.open(sprite_path)
+        cropped_width, cropped_height = processed_img.size
+        print(f"  ✓ Final sprite sheet: {cropped_width}x{cropped_height}px")
 
         print(f"  ✓ Frame size: {frame_width}x{frame_height}px")
         print(f"  ✓ Number of frames: {num_frames}")
         print(f"  ✓ Expected sprite sheet width: {frame_width * num_frames}px (actual: {cropped_width}px)")
 
-        # Save processed sprite
-        processed_path = self.output_dir / "assets" / f"processed_{sprite_path.name}"
-        processed_path.parent.mkdir(parents=True, exist_ok=True)
-        processed_img.save(processed_path)
-        print(f"  ✓ Processed sprite saved: {processed_path.name}")
+        # The sprite_path is already the final processed horizontal strip from smart extraction
+        # Just rename it for clarity
+        processed_path = sprite_path
+        print(f"  ✓ Final sprite sheet saved: {processed_path.name}")
 
         print(f"\n📦 Creating sprite_config with num_frames={num_frames}")
         import sys
