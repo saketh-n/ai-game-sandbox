@@ -13,6 +13,8 @@ const GameSandbox = () => {
     gaps_detected: number
     spawn_point: { x: number; y: number }
   } | null>(null)
+  const [debugFrames, setDebugFrames] = useState<string[]>([])
+  const [showDebug, setShowDebug] = useState(false)
 
   useEffect(() => {
     // Redirect if no images are available
@@ -55,6 +57,7 @@ const GameSandbox = () => {
         gaps_detected: data.gaps_detected,
         spawn_point: data.spawn_point,
       })
+      setDebugFrames(data.debug_frames || [])
     } catch (err) {
       console.error('Error generating game:', err)
       setError(err instanceof Error ? err.message : 'Failed to generate game')
@@ -293,6 +296,67 @@ const GameSandbox = () => {
                   <span className="text-purple-200 text-sm">Reset Position</span>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Debug Panel */}
+          {debugFrames.length > 0 && !loading && (
+            <div className="mt-6 bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 overflow-hidden">
+              <button
+                onClick={() => setShowDebug(!showDebug)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  <svg
+                    className="w-5 h-5 text-yellow-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                  <span className="text-white font-semibold">Debug: Extracted Sprite Frames ({debugFrames.length})</span>
+                </div>
+                <svg
+                  className={`w-5 h-5 text-white transition-transform ${showDebug ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {showDebug && (
+                <div className="p-6 border-t border-white/10">
+                  <p className="text-purple-200 text-sm mb-4">
+                    These are the individual frames extracted from the sprite sheet after grid detection and rearrangement.
+                    Each frame should show the character in a consistent position without cut-offs.
+                  </p>
+                  <div className="grid grid-cols-4 md:grid-cols-8 gap-4">
+                    {debugFrames.map((frame, index) => (
+                      <div key={index} className="relative group">
+                        <div className="bg-white/10 rounded-lg p-2 border border-white/20 hover:border-yellow-400 transition-colors">
+                          <img
+                            src={frame}
+                            alt={`Frame ${index}`}
+                            className="w-full h-auto"
+                            style={{ imageRendering: 'pixelated' }}
+                          />
+                        </div>
+                        <div className="absolute -top-2 -right-2 bg-yellow-400 text-black text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center">
+                          {index}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
