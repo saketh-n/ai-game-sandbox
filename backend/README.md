@@ -68,8 +68,10 @@ backend/
 The unified game generator takes character sprites and background images and produces a complete playable HTML5 platformer game.
 
 **Features:**
-- Automatic platform detection using proportional scaling
+- **Automatic sprite sheet layout detection** - Uses Claude Vision API to detect grid vs horizontal layouts and auto-rearranges
+- **Automatic platform detection** - Claude Vision analyzes backgrounds to identify walkable platforms
 - Character sprite processing (8-frame walking animation)
+- Background removal with auto-cropping
 - Double jump mechanics
 - Responsive canvas sizing
 - Real-time stats display
@@ -87,10 +89,12 @@ The unified game generator takes character sprites and background images and pro
 ### Sprite Requirements
 
 **Character Sprite Sheet:**
-- Format: PNG with transparent background
-- Layout: Horizontal sprite sheet (frames side-by-side)
+- Format: PNG with transparent or white background
+- Layout: **Any layout** - Horizontal (1×8) or Grid (2×4, 4×2, etc.) - auto-detected and rearranged!
 - Frames: Typically 8 frames for walking animation
-- Example: 920x187px (8 frames of 115x187px each)
+- Example horizontal: 1024×128px (8 frames of 128×128px each)
+- Example grid: 512×256px (2 rows × 4 columns of 128×128px each)
+- **New!** The system automatically detects grid layouts and converts to horizontal format
 
 **Background Image:**
 - Format: PNG or JPG
@@ -270,6 +274,39 @@ The game generator uses **Claude Vision API (Sonnet 4.5)** to automatically anal
 - Gaps between platforms are identified for jump mechanics
 
 This vision-based approach ensures accurate platform detection for any background image, without manual configuration.
+
+## Sprite Sheet Layout Detection
+
+The game generator now automatically detects and handles sprite sheets in **any layout** (horizontal or grid) using **Claude Vision API**.
+
+**How it works:**
+1. Sprite sheet is analyzed by Claude Vision API to detect layout type
+2. Claude identifies the grid structure (rows × columns) and frame dimensions
+3. If a grid layout is detected (e.g., 2×4 or 4×2), frames are automatically extracted
+4. Frames are rearranged into a horizontal strip (1×N) for Phaser.js compatibility
+5. Processing continues normally with background removal and game generation
+
+**Supported layouts:**
+- ✅ Horizontal (1×N): Already in correct format, no changes needed
+- ✅ Grid (M×N): Automatically detected and converted to horizontal
+- ✅ Any frame count: 4, 6, 8, 12, 16+ frames supported
+- ✅ Any frame size: Automatically detected from image
+
+**Example:**
+```bash
+# Works with grid sprite sheets!
+uv run python game_generator.py \
+  --character trex_2x4_grid.png \
+  --background platform_bg.png
+
+# Output:
+# 🔍 Analyzing sprite sheet layout...
+# 📊 Layout detected: grid (2×4)
+# ⚙️  Converting grid layout to horizontal strip...
+# ✓ Rearranged sprite sheet saved
+```
+
+This feature eliminates the need to manually rearrange sprite sheets - the system handles it automatically!
 
 ## Troubleshooting
 

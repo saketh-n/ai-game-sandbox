@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 from sprite_processing.background_remover import BackgroundRemover
 from sprite_processing.sprite_sheet_builder import SpriteSheetBuilder
+from sprite_processing.sprite_sheet_analyzer import SpriteSheetAnalyzer
 from scene_builder.background_analyzer import BackgroundAnalyzer
 from scene_builder.scene_generator import SceneGenerator
 from scene_builder.web_exporter import WebGameExporter
@@ -48,6 +49,9 @@ class GameGenerator:
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY required for platform detection. Set it in your .env file.")
         self.anthropic_client = anthropic.Anthropic(api_key=api_key)
+
+        # Initialize sprite sheet analyzer
+        self.sprite_analyzer = SpriteSheetAnalyzer(api_key=api_key)
 
     def analyze_walkable_platforms(self, background_path: Path) -> Dict[str, Any]:
         """
@@ -182,10 +186,38 @@ Only return the JSON, no other text."""
         """
         print(f"\n🎨 Processing character sprite {sprite_path.name}...")
 
-        # Load sprite sheet
+        # STEP 1: Analyze sprite sheet layout and rearrange if needed
+        print(f"  Analyzing sprite sheet layout...")
+        layout_info = self.sprite_analyzer.analyze_sprite_sheet_layout(sprite_path)
+
+        print(f"  Layout: {layout_info['layout_type']} ({layout_info['rows']}×{layout_info['columns']})")
+        print(f"  Total frames: {layout_info['total_frames']}")
+
+        # If it's a grid layout, rearrange to horizontal
+        if layout_info['layout_type'] == 'grid' and layout_info['rows'] > 1:
+            print(f"  ⚙️  Converting grid layout to horizontal strip...")
+            temp_sprite_path = self.output_dir / "assets" / f"rearranged_{sprite_path.name}"
+            temp_sprite_path.parent.mkdir(parents=True, exist_ok=True)
+
+            sprite_path, layout_info = self.sprite_analyzer.rearrange_to_horizontal(
+                sprite_path,
+                temp_sprite_path,
+                layout_info=layout_info
+            )
+
+            # Update num_frames from layout analysis
+            num_frames = layout_info['total_frames']
+
+            # Use detected frame dimensions if not provided
+            if frame_width is None:
+                frame_width = layout_info['frame_width']
+            if frame_height is None:
+                frame_height = layout_info['frame_height']
+
+        # STEP 2: Load sprite sheet (possibly rearranged)
         sprite_img = Image.open(sprite_path)
         sheet_width, sheet_height = sprite_img.size
-        print(f"  Original size: {sheet_width}x{sheet_height}px")
+        print(f"  Final sprite size: {sheet_width}x{sheet_height}px")
 
         # Remove white background
         print(f"  Removing background...")
