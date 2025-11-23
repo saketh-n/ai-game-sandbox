@@ -80,7 +80,7 @@ class WebGameExporter:
         collectible_sprites_json = json.dumps(collectible_sprites if collectible_sprites else [])
         collectible_positions_json = json.dumps(collectible_positions if collectible_positions else [])
         collectible_metadata_json = json.dumps(collectible_metadata if collectible_metadata else [])
-
+        
         # Prepare mob data
         has_mob = mob_sprite_path is not None and mob_data is not None
         mob_sprite_data_url = mob_sprite_path
@@ -1051,7 +1051,6 @@ class WebGameExporter:
                 const health = mob.getData('health');
                 const maxHealth = mob.getData('maxHealth');
                 const healthPercent = health / maxHealth;
-
                 const healthBarFill = mob.getData('healthBarFill');
                 if (healthBarFill) {{
                     healthBarFill.clear();

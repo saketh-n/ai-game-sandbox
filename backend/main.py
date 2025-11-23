@@ -13,9 +13,11 @@ import json
 import tempfile
 import httpx
 from pathlib import Path
+import base64
 from cache_manager import cache
 from image_cache_manager import image_cache
 from game_cache_manager import game_cache
+from component_cache_manager import component_cache
 
 from image_generation.generator import ImageGenerator
 from image_generation.config import ImageGenerationConfig
@@ -939,6 +941,7 @@ async def generate_game(request: GenerateGameRequest):
     logger.info(f"[{request_id}] Character URL: {request.character_url}")
     logger.info(f"[{request_id}] Frames: {request.num_frames}, Name: {request.game_name}")
 
+
     # Check cache first
     cached_game = game_cache.get_cached_game(
         background_url=request.background_url,
@@ -971,6 +974,10 @@ async def generate_game(request: GenerateGameRequest):
         )
     
     logger.info(f"[{request_id}] Cache miss. Generating new game...")
+
+    # Component-level cache checking
+    logger.info(f"[{request_id}] Checking component-level cache...")
+    cache_status = {}
 
     # Create temporary directory for downloads and generation
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -1013,46 +1020,140 @@ async def generate_game(request: GenerateGameRequest):
             output_dir = temp_path / "generated_game"
             game_gen = GameGenerator(output_dir=str(output_dir))
 
-            # Download and process collectibles if provided
+            # ========== COMPONENT 1: BACKGROUND ==========
+            bg_cached = component_cache.get_background_component(request.background_url)
+            if bg_cached:
+                logger.info(f"[{request_id}] ✓ Background component CACHE HIT")
+                platform_analysis = bg_cached['platform_analysis']
+                cache_status['background'] = 'HIT'
+            else:
+                logger.info(f"[{request_id}] ✗ Background component CACHE MISS - processing...")
+                # Download background
+                async with httpx.AsyncClient(timeout=30.0) as http_client:
+                    bg_response = await http_client.get(request.background_url)
+                    bg_response.raise_for_status()
+                    bg_path = temp_path / "background.png"
+                    bg_path.write_bytes(bg_response.content)
+                # Analyze with Claude Vision
+                platform_analysis = await asyncio.to_thread(
+                    game_gen.analyze_walkable_platforms,
+                    bg_path
+                )
+                # Cache the result
+                component_cache.save_background_component(request.background_url, platform_analysis)
+                cache_status['background'] = 'MISS'
+            
+            # ========== COMPONENT 2: CHARACTER ==========
+            char_cached = component_cache.get_character_component(request.character_url, request.num_frames)
+            if char_cached:
+                logger.info(f"[{request_id}] ✓ Character component CACHE HIT")
+                sprite_config = char_cached['sprite_config']
+                processed_sprite_data_url = char_cached['processed_sprite_data_url']
+                debug_frames = char_cached['debug_frames']
+                cache_status['character'] = 'HIT'
+            else:
+                logger.info(f"[{request_id}] ✗ Character component CACHE MISS - processing...")
+                # Download character
+                async with httpx.AsyncClient(timeout=30.0) as http_client:
+                    char_response = await http_client.get(request.character_url)
+                    char_response.raise_for_status()
+                    char_path = temp_path / "character.png"
+                    char_path.write_bytes(char_response.content)
+                # Process sprite
+                processed_sprite_path, sprite_config = await asyncio.to_thread(
+                    game_gen.process_character_sprite,
+                    char_path,
+                    num_frames=request.num_frames
+                )
+                # Convert to base64
+                with open(processed_sprite_path, 'rb') as f:
+                    sprite_base64 = base64.b64encode(f.read()).decode('utf-8')
+                processed_sprite_data_url = f"data:image/png;base64,{sprite_base64}"
+                # Extract debug frames
+                debug_frames = await asyncio.to_thread(
+                    game_gen._extract_debug_frames,
+                    processed_sprite_path,
+                    sprite_config
+                )
+                # Cache the result
+                component_cache.save_character_component(
+                    request.character_url,
+                    request.num_frames,
+                    sprite_config,
+                    processed_sprite_data_url,
+                    debug_frames
+                )
+                cache_status['character'] = 'MISS'
+            
+            # ========== COMPONENT 3: MOB (if provided) ==========
+            mob_config = None
+            processed_mob_data_url = None
+            if request.mob_url:
+                mob_cached = component_cache.get_mob_component(request.mob_url, request.num_frames)
+                if mob_cached:
+                    logger.info(f"[{request_id}] ✓ Mob component CACHE HIT")
+                    mob_config = mob_cached['sprite_config']
+                    processed_mob_data_url = mob_cached['processed_sprite_data_url']
+                    cache_status['mob'] = 'HIT'
+                else:
+                    logger.info(f"[{request_id}] ✗ Mob component CACHE MISS - processing...")
+                    # Download mob
+                    async with httpx.AsyncClient(timeout=30.0) as http_client:
+                        mob_response = await http_client.get(request.mob_url)
+                        mob_response.raise_for_status()
+                        mob_path = temp_path / "mob.png"
+                        mob_path.write_bytes(mob_response.content)
+                    # Process mob sprite
+                    processed_mob_path, mob_config = await asyncio.to_thread(
+                        game_gen.process_character_sprite,
+                        mob_path,
+                        num_frames=request.num_frames
+                    )
+                    # Convert to base64
+                    with open(processed_mob_path, 'rb') as f:
+                        mob_base64 = base64.b64encode(f.read()).decode('utf-8')
+                    processed_mob_data_url = f"data:image/png;base64,{mob_base64}"
+                    # Cache the result
+                    component_cache.save_mob_component(
+                        request.mob_url,
+                        request.num_frames,
+                        mob_config,
+                        processed_mob_data_url
+                    )
+                    cache_status['mob'] = 'MISS'
+            
+            # ========== COMPONENT 4: COLLECTIBLES (if provided) ==========
             collectible_sprites = []
-            collectible_positions = []
             collectible_metadata = []
             if request.collectible_url:
-                logger.info(f"[{request_id}] Downloading collectible sprite sheet...")
-                async with httpx.AsyncClient(timeout=30.0) as http_client:
-                    coll_response = await http_client.get(request.collectible_url)
-                    coll_response.raise_for_status()
-
-                    coll_path = temp_path / "collectibles.png"
-                    coll_path.write_bytes(coll_response.content)
-                    logger.info(f"[{request_id}] Collectibles downloaded: {len(coll_response.content)} bytes")
-
-                # Step 1: Analyze collectible metadata with Claude Vision
-                logger.info(f"[{request_id}] Analyzing collectible metadata with Claude Vision...")
-                collectible_metadata = await asyncio.to_thread(
-                    analyze_collectible_metadata,
-                    coll_path,
-                    client  # Global Anthropic client (not http_client)
-                )
-                logger.info(f"[{request_id}] Identified {len(collectible_metadata)} collectibles with metadata")
-
-                # Step 2: Segment collectible sprites using the same analyzer as character sprites
-                logger.info(f"[{request_id}] Segmenting collectible sprites...")
-                collectible_sprites = await asyncio.to_thread(
-                    segment_collectible_sprites,
-                    coll_path,
-                    game_gen.sprite_analyzer,  # Pass the sprite analyzer
-                    len(collectible_metadata)  # Pass expected count from metadata
-                )
-                logger.info(f"[{request_id}] Segmented {len(collectible_sprites)} collectible sprites")
-                
-                # Verify counts match (metadata should match sprite count)
-                if len(collectible_metadata) != len(collectible_sprites):
-                    logger.warning(
-                        f"[{request_id}] Mismatch: {len(collectible_metadata)} metadata items vs "
-                        f"{len(collectible_sprites)} sprites. Some collectibles may not have descriptions."
+                coll_cached = component_cache.get_collectible_component(request.collectible_url)
+                if coll_cached:
+                    logger.info(f"[{request_id}] ✓ Collectible component CACHE HIT")
+                    collectible_metadata = coll_cached['collectible_metadata']
+                    collectible_sprites = coll_cached['collectible_sprites']
+                    cache_status['collectible'] = 'HIT'
+                else:
+                    logger.info(f"[{request_id}] ✗ Collectible component CACHE MISS - processing...")
+                    # Download collectibles
+                    async with httpx.AsyncClient(timeout=30.0) as http_client:
+                        coll_response = await http_client.get(request.collectible_url)
+                        coll_response.raise_for_status()
+                        coll_path = temp_path / "collectibles.png"
+                        coll_path.write_bytes(coll_response.content)
+                    # Analyze metadata with Claude Vision
+                    collectible_metadata = await asyncio.to_thread(
+                        analyze_collectible_metadata,
+                        coll_path,
+                        client
                     )
-                    # Pad metadata with generic entries if needed
+                    # Segment sprites
+                    collectible_sprites = await asyncio.to_thread(
+                        segment_collectible_sprites,
+                        coll_path,
+                        game_gen.sprite_analyzer,
+                        len(collectible_metadata)
+                    )
+                    # Pad metadata if needed
                     while len(collectible_metadata) < len(collectible_sprites):
                         idx = len(collectible_metadata)
                         collectible_metadata.append({
@@ -1060,6 +1161,13 @@ async def generate_game(request: GenerateGameRequest):
                             "status_effect": "Unknown Effect",
                             "description": "A mysterious collectible item with unknown powers!"
                         })
+                    # Cache the result
+                    component_cache.save_collectible_component(
+                        request.collectible_url,
+                        collectible_metadata,
+                        collectible_sprites
+                    )
+                    cache_status['collectible'] = 'MISS'
 
             # Generate game with URLs (runs in thread pool since it's blocking)
             logger.info(f"[{request_id}] Generating game with Claude Vision analysis...")
@@ -1078,30 +1186,80 @@ async def generate_game(request: GenerateGameRequest):
                 mob_sprite_url=request.mob_url
             )
             
-            # Generate collectible positions on platforms and regenerate HTML
-            if collectible_sprites and len(collectible_sprites) > 0:
-                logger.info(f"[{request_id}] Generating collectible positions on platforms...")
+            # Log cache performance
+            hits = sum(1 for v in cache_status.values() if v == 'HIT')
+            misses = sum(1 for v in cache_status.values() if v == 'MISS')
+            logger.info(f"[{request_id}] Cache performance: {hits} hits, {misses} misses out of {len(cache_status)} components")
+            
+            # ========== ASSEMBLE SCENE CONFIG ==========
+            logger.info(f"[{request_id}] Assembling scene configuration from components...")
+            scene_config = {
+                "name": request.game_name,
+                "background": {
+                    "path": request.background_url,
+                    "width": platform_analysis["width"],
+                    "height": platform_analysis["height"]
+                },
+                "character": {
+                    "sprite_path": processed_sprite_data_url,
+                    "sprite_path_original": request.character_url,
+                    "frame_width": sprite_config["frame_width"],
+                    "frame_height": sprite_config["frame_height"],
+                    "num_frames": sprite_config["num_frames"],
+                    "spawn_x": platform_analysis["spawn"]["x"],
+                    "spawn_y": platform_analysis["spawn"]["y"]
+                },
+                "physics": {
+                    "gravity": 600,
+                    "platforms": platform_analysis["platforms"],
+                    "bounds": {
+                        "x": 0,
+                        "y": 0,
+                        "width": platform_analysis["width"],
+                        "height": platform_analysis["height"]
+                    }
+                },
+                "player": {
+                    "walk_speed": 180,
+                    "jump_velocity": -380,
+                    "max_jumps": 2
+                },
+                "analysis": platform_analysis
+            }
+            
+            # Add mob config if present
+            if mob_config and processed_mob_data_url:
+                scene_config["mob"] = {
+                    "sprite_path": processed_mob_data_url,
+                    "frame_width": mob_config["frame_width"],
+                    "frame_height": mob_config["frame_height"],
+                    "num_frames": mob_config["num_frames"]
+                }
+            
+            # ========== GENERATE COLLECTIBLE POSITIONS ==========
+            collectible_positions = []
+            if collectible_sprites:
+                logger.info(f"[{request_id}] Generating collectible positions...")
                 collectible_positions = generate_collectible_positions(
                     platforms=scene_config["physics"]["platforms"],
                     num_collectibles=min(15, max(8, len(scene_config["physics"]["platforms"]) * 3))
                 )
-                # Clamp sprite indices to actual sprite count
                 for pos in collectible_positions:
                     pos['sprite_index'] = pos['sprite_index'] % len(collectible_sprites)
-                
-                # Regenerate HTML with collectibles and metadata (and mob if present)
-                logger.info(f"[{request_id}] Regenerating game HTML with collectibles...")
-                mob_data = scene_config.get('mob')
-                game_html = game_gen.web_exporter._generate_html(
-                    scene_config,
-                    request.background_url,
-                    scene_config['character']['sprite_path'],
-                    collectible_sprites,
-                    collectible_positions,
-                    collectible_metadata,
-                    mob_data['sprite_path'] if mob_data else None,
-                    mob_data if mob_data else None
-                )
+            
+            # ========== GENERATE GAME HTML ==========
+            logger.info(f"[{request_id}] Generating game HTML...")
+            mob_data = scene_config.get('mob')
+            game_html = game_gen.web_exporter._generate_html(
+                scene_config,
+                request.background_url,
+                processed_sprite_data_url,
+                collectible_sprites,
+                collectible_positions,
+                collectible_metadata,
+                mob_data['sprite_path'] if mob_data else None,
+                mob_data if mob_data else None
+            )
 
             logger.info(f"[{request_id}] Game HTML generated: {len(game_html)} characters")
             logger.info(f"[{request_id}] Debug frames extracted: {len(debug_frames)}")
@@ -1115,6 +1273,12 @@ async def generate_game(request: GenerateGameRequest):
             debug_platforms = ""
             if request.debug_options.get("show_platforms", False):
                 logger.info(f"[{request_id}] Generating platform debug visualization...")
+                # Need to download background for debug visualization
+                async with httpx.AsyncClient(timeout=30.0) as http_client:
+                    bg_response = await http_client.get(request.background_url)
+                    bg_response.raise_for_status()
+                    bg_path = temp_path / "background_debug.png"
+                    bg_path.write_bytes(bg_response.content)
                 debug_platforms = await asyncio.to_thread(
                     generate_platform_debug,
                     bg_path,
@@ -1124,7 +1288,7 @@ async def generate_game(request: GenerateGameRequest):
                 )
                 logger.info(f"[{request_id}] Platform debug visualization generated")
 
-            logger.success(f"[{request_id}] Game generated successfully!")
+            logger.success(f"[{request_id}] Game generated successfully with component caching!")
             logger.info(f"[{request_id}] Platforms: {platforms_detected}, Gaps: {gaps_detected}")
 
             # Prepare debug collectibles data (combine sprites with metadata)
@@ -1246,8 +1410,39 @@ async def clear_game_cache():
         ) from e
 
 
+@app.get("/component-cache/stats")
+async def get_component_cache_stats():
+    """Get statistics about component-level cache"""
+    try:
+        stats = component_cache.get_cache_stats()
+        return {
+            "stats": stats,
+            "message": f"Component cache contains {stats['total_components']} components using {stats['total_size_mb']} MB"
+        }
+    except Exception as e:
+        logger.error(f"Error getting component cache stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get component cache stats: {str(e)}"
+        ) from e
+
+
+@app.delete("/component-cache")
+async def clear_component_cache():
+    """Clear all cached components"""
+    try:
+        component_cache.clear_cache()
+        logger.info("Component cache cleared by API request")
+        return {"message": "Component cache cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing component cache: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear component cache"
+        ) from e
+
+
 if __name__ == "__main__":
     import uvicorn
     logger.info("Starting AI Asset Generator API on http://0.0.0.0:8000")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

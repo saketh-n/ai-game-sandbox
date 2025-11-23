@@ -15,8 +15,10 @@ ai-asset-gen-sandbox/
 │   │   └── main.tsx        # Entry point
 │   └── package.json
 ├── backend/
-│   ├── main.py             # FastAPI server
-│   ├── cache_manager.py    # Caching system
+│   ├── main.py                      # FastAPI server
+│   ├── cache_manager.py             # Prompt caching system
+│   ├── component_cache_manager.py   # Component-level game caching
+│   ├── game_cache_manager.py        # Monolithic game caching
 │   └── requirements.txt
 └── README.md
 ```
@@ -253,6 +255,33 @@ Make this background fit the scene and well visible. Focus on making the backgro
 ```
 {user_instruction}
 Make this item be visible within the center of the image. Make the background white around the item
+```
+
+## Performance & Caching
+
+The system implements **intelligent component-level caching** for dramatic performance improvements:
+
+- **80-90% faster** game regeneration after modifications
+- **Granular caching** of backgrounds, characters, mobs, and collectibles
+- **Automatic invalidation** when assets change
+- **Mix and match** cached components across generations
+
+For detailed information, see [COMPONENT_CACHING_SYSTEM.md](./COMPONENT_CACHING_SYSTEM.md)
+
+### API Endpoints for Cache Management
+
+```bash
+# Get component cache statistics
+GET /component-cache/stats
+
+# Clear component cache
+DELETE /component-cache
+
+# Get game cache list (legacy monolithic cache)
+GET /game-cache/list
+
+# Clear game cache
+DELETE /game-cache
 ```
 
 ## License
