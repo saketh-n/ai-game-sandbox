@@ -423,12 +423,14 @@ async def generate_image_asset(request: GenerateImageRequest):
     logger.info(f"[{request_id}] No cache found, generating new image...")
     
     try:
-        image_generator_response = image_generator.generate(
+        # Run the blocking image generation in a thread pool
+        image_generator_response = await asyncio.to_thread(
+            image_generator.generate,
             config=ImageGenerationConfig(
                 model_name="fal-ai/alpha-image-232/text-to-image",
                 prompt=request.prompt
             )
-        ) 
+        )
         
         image_url = image_generator_response['images'][0]['url']
         

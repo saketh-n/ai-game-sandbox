@@ -46,15 +46,24 @@ const GenerateAssets = () => {
     generateAllImages(initialAssets)
   }, [selectedPrompts, navigate])
 
-  const generateSingleImage = async (index: number, forceRegenerate: boolean = false) => {
-    const asset = assets[index]
-    const selectedPrompt = selectedPrompts[index]
-
+  const generateSingleImage = async (
+    index: number, 
+    assetData: AssetGeneration,
+    forceRegenerate: boolean = false
+  ) => {
+    // Use the passed asset instead of reading from state
+    const asset = assetData
+    
+    if (!asset) {
+      console.error(`Asset at index ${index} is undefined`)
+      return
+    }
+    
     // Update status to generating
     setAssets(prev => prev.map((a, idx) => 
       idx === index ? { ...a, status: 'generating', cached: false } : a
     ))
-
+    
     try {
       const response = await fetch(`${API_URL}/generate-image-asset`, {
         method: 'POST',
@@ -62,18 +71,19 @@ const GenerateAssets = () => {
         body: JSON.stringify({
           prompt: asset.prompt,
           category: asset.category,
-          style: selectedPrompt.style || '',
-          additional_instructions: selectedPrompt.additional_instructions || '',
-          image_size: selectedPrompt.image_size || '',
-          output_format: selectedPrompt.output_format || 'png',
+          style: asset.style || '',
+          additional_instructions: asset.additional_instructions || '',
+          image_size: asset.image_size || '',
+          output_format: asset.output_format || 'png',
           force_regenerate: forceRegenerate,
         }),
       })
-
+      
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`)
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(`API error: ${response.status} - ${errorData.detail || response.statusText}`)
       }
-
+      
       const data = await response.json()
       
       // Update status to completed with image URL and cached flag
@@ -86,6 +96,7 @@ const GenerateAssets = () => {
         } : a
       ))
     } catch (error) {
+      console.error(`Error generating asset at index ${index}:`, error)
       // Update status to error
       setAssets(prev => prev.map((a, idx) => 
         idx === index ? { 
@@ -96,19 +107,20 @@ const GenerateAssets = () => {
       ))
     }
   }
-
+  
   const generateAllImages = async (initialAssets: AssetGeneration[]) => {
-    // Start all generations in parallel
-    const generationPromises = initialAssets.map((_, index) => 
-      generateSingleImage(index, false)
+    // Pass the actual asset data to each generation call
+    const generationPromises = initialAssets.map((asset, index) => 
+      generateSingleImage(index, asset, false)
     )
-
-    // Wait for all generations to complete
     await Promise.all(generationPromises)
   }
-
+  
   const handleRefresh = (index: number) => {
-    generateSingleImage(index, true)
+    const asset = assets[index]
+    if (asset) {
+      generateSingleImage(index, asset, true)
+    }
   }
 
   const handleBack = () => {
