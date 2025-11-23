@@ -11,6 +11,9 @@ import asyncio
 import json
 from cache_manager import cache
 
+from image_generation.generator import ImageGenerator
+from image_generation.config import ImageGenerationConfig
+
 # Load environment variables
 load_dotenv()
 
@@ -84,6 +87,8 @@ class GenerateImageResponse(BaseModel):
     image_url: str
     prompt: str
     category: str
+
+image_generator = ImageGenerator(api_key=os.getenv("FAL_KEY"))
 
 
 @app.get("/")
@@ -371,12 +376,19 @@ async def generate_image_asset(request: GenerateImageRequest):
     request_id = f"img_{os.urandom(4).hex()}"
     logger.info(f"[{request_id}] Image generation request for category: {request.category}")
     logger.info(f"[{request_id}] Prompt: {request.prompt[:100]}...")
+
+    image_generator_response = image_generator.generate(
+        config=ImageGenerationConfig(
+            model_name="fal-ai/alpha-image-232/text-to-image",
+            prompt=request.prompt
+        )
+    ) 
     
     try:
         # Return a placeholder image URL (using picsum.photos for demo)
         # Different seed based on category for variety
         category_seed = abs(hash(request.category)) % 1000
-        image_url = f"https://picsum.photos/seed/{category_seed}/512/512"
+        image_url = image_generator_response['images'][0]['url']
         
         logger.info(f"[{request_id}] Image generated successfully: {image_url}")
         

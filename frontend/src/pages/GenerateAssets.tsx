@@ -88,7 +88,7 @@ const GenerateAssets = () => {
           } : a
         ))
       }
-    })
+    }, [])
 
     // Wait for all generations to complete
     await Promise.all(generationPromises)
