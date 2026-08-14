@@ -1316,7 +1316,6 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
         game_name: str = "PlatformerGame",
         player_config: Optional[Dict[str, Any]] = None,
         collectible_sprites: list = None,
-        collectible_positions: list = None,
         collectible_metadata: list = None,
         mob_sprite_path: str = None,
         mob_sprite_url: str = None
@@ -1336,7 +1335,6 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
             game_name: Name for the generated game
             player_config: Optional player physics configuration
             collectible_sprites: List of collectible sprite data URLs
-            collectible_positions: List of collectible positions
             collectible_metadata: List of collectible metadata
             mob_sprite_path: Local path to downloaded mob sprite
             mob_sprite_url: Original URL to mob sprite
@@ -1438,11 +1436,10 @@ Be critical and thorough. If detections aren't perfect, refine them!"""
             scene_config,
             background_image_url,  # Pass original URL for background
             processed_sprite_data_url,  # Pass data URL for processed sprite
-            collectible_sprites,  # Pass collectible sprite data URLs
-            collectible_positions,  # Pass collectible positions
-            collectible_metadata,  # Pass collectible metadata
-            processed_mob_data_url,  # Pass mob sprite data URL
-            mob_config  # Pass mob sprite configuration
+            collectible_sprites=collectible_sprites,
+            collectible_metadata=collectible_metadata,
+            mob_sprite_path=processed_mob_data_url,
+            mob_data=mob_config
         )
 
         print(f"  ✓ Game HTML generated: {len(game_html)} characters")
