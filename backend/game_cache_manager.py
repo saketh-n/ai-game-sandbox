@@ -136,7 +136,7 @@ class GameCacheManager:
             background_url, character_url, mob_url, collectible_url, num_frames
         )
         cache_path = self._get_cache_path(cache_key)
-        cache_path.mkdir(exist_ok=True)
+        cache_path.mkdir(parents=True, exist_ok=True)
         
         try:
             # Save game HTML
@@ -219,11 +219,18 @@ class GameCacheManager:
         return games
     
     def clear_cache(self):
-        """Clear all cached games"""
-        if self.cache_dir.exists():
-            shutil.rmtree(self.cache_dir)
-            self.cache_dir.mkdir(exist_ok=True)
-            print("✓ Game cache cleared")
+        """Clear all cached games (preserves the components/ subdirectory)"""
+        self.cache_dir.mkdir(exist_ok=True)
+        # The component cache lives at cache_dir/components; removing it here
+        # would break ComponentCacheManager, which owns that directory.
+        for entry in self.cache_dir.iterdir():
+            if entry.name == "components":
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
+        print("✓ Game cache cleared")
     
     def delete_cached_game(
         self,
