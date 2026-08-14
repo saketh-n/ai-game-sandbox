@@ -1,288 +1,136 @@
-# AI Video Game Asset Generator & Sandbox
+<div align="center">
 
-A beautiful, modern web application for generating video game assets using AI, with real-time sandboxing capabilities.
+# 🎮 AI Video Game Asset Generator & Sandbox
+
+**Type a game theme → get AI-generated sprite sheets → play the game in your browser.**
+
+An end-to-end pipeline that turns a one-line idea ("Turntable Tito") into a fully playable
+2D platformer: Claude writes the asset prompts, FAL AI renders the art, and a Phaser game
+is generated and embedded — complete with mobs, collectibles, and level progression.
+
+<img src="docs/screenshots/game-sandbox.jpg" alt="Playable game sandbox with HUD" width="800">
+
+</div>
+
+## How It Works
+
+| 1 · Describe | 2 · Generate | 3 · Play |
+|---|---|---|
+| Enter a theme on the home page. Claude (`claude-sonnet-4-5`) writes detailed image prompts for four assets: **main character**, **mob**, **background**, and **collectible item**. | Prompts are editable, then rendered in parallel by FAL AI as sprite sheets and scenes, with per-asset regeneration and cache badges. | The backend detects walkable platforms in the background (Claude vision), extracts animation frames, segments collectibles, and emits a playable Phaser game in the browser. |
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/home.jpg" alt="Theme input with recent prompts" width="400"><br><sub><b>Home</b> — theme input + prompt history</sub></td>
+    <td align="center"><img src="docs/screenshots/asset-generation.jpg" alt="Sprite sheet generation" width="400"><br><sub><b>Asset generation</b> — sprite-sheet walk cycles</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/game-sandbox.jpg" alt="Game sandbox" width="400"><br><sub><b>Game sandbox</b> — playable platformer with HUD</sub></td>
+    <td align="center"><img src="docs/screenshots/collectible-pickup.jpg" alt="Collectible pickup" width="400"><br><sub><b>Collectibles</b> — AI-named items with status effects</sub></td>
+  </tr>
+</table>
 
 ## Features
 
-```
-ai-asset-gen-sandbox/
-├── frontend/
-│   ├── src/
-│   │   ├── components/      # Reusable UI components
-│   │   ├── pages/          # Route pages (Home, GenerateAssets)
-│   │   ├── context/        # React Context for state management
-│   │   ├── App.tsx         # Router setup
-│   │   └── main.tsx        # Entry point
-│   └── package.json
-├── backend/
-│   ├── main.py                      # FastAPI server
-│   ├── cache_manager.py             # Prompt caching system
-│   ├── component_cache_manager.py   # Component-level game caching
-│   ├── game_cache_manager.py        # Monolithic game caching
-│   └── requirements.txt
-└── README.md
-```
-- 🎮 Video game theme input with intuitive UI
-- 🎨 Beautiful gradient background with glassmorphism design
-- ⚡ Built with React, TypeScript, and Tailwind CSS
-- 🚀 Fast development with Vite
-- 🖼️ Python-based image generation with FAL AI integration
+- 🧠 **Theme → assets** — one prompt becomes four coordinated asset prompts (character, mob, background, collectible), each with editable variations
+- 🖼️ **Parallel image generation** — FAL AI renders all assets concurrently, with per-asset regeneration
+- 🕹️ **Playable sandbox** — double jump, one-way platforms, mobs with health bars and projectiles, win-by-collecting-everything, and escalating difficulty per level
+- 👁️ **Vision-powered pipeline** — Claude vision detects walkable platforms in the generated background, analyzes sprite-sheet layouts, and names collectibles with status effects (health / score / gold)
+- 📊 **Dynamic HUD** — health bar plus stats that appear based on the collectibles in your game
+- ⚡ **Component-level caching** — backgrounds, characters, mobs, and collectibles are cached independently for 80–90% faster regeneration
+- 🕒 **Prompt history** — reload any previous theme instantly from cache
+- 📚 **Interactive API docs** — Swagger UI at `/docs`, ReDoc at `/redoc`
 
-## Getting Started
+## Quick Start
 
-### Prerequisites
+You'll need two API keys: [Anthropic](https://console.anthropic.com/) and [FAL](https://fal.ai/dashboard/keys).
 
-- Node.js (v18 or higher recommended)
-- npm or yarn
-- Python 3.9+ (for image generation)
-- [uv](https://github.com/astral-sh/uv) (recommended for Python dependency management)
+### Backend (Python 3.12+ · [uv](https://github.com/astral-sh/uv))
 
-### Frontend Installation
-
-1. Install dependencies:
-```bash
-npm install
-```
-
-2. Start the development server:
-```bash
-npm run dev
-```
-
-3. Open your browser and navigate to `http://localhost:5173`
-
-### Python Image Generation Setup
-
-1. Navigate to the backend directory:
 ```bash
 cd backend
-```
-
-2. Install dependencies using uv:
-```bash
 uv sync
+cp .env.example .env   # then add BOTH keys to .env:
+                       #   ANTHROPIC_API_KEY=sk-ant-...
+                       #   FAL_KEY=...
+uv run python main.py  # → http://localhost:8000
 ```
 
-3. Set up your FAL API key:
-```bash
-cp .env.example .env
-# Edit .env and add your FAL_KEY from https://fal.ai/dashboard/keys
-```
-4. Run the example or use the CLI:
-```bash
-# Run example script
-uv run example.py
-
-# Or use the CLI tool
-uv run generate-image "Your prompt here"
-```
-
-## CLI Usage
-
-From the `backend` directory, use `uv run generate-image` to run the CLI tool:
-
-### Basic Usage
+### Frontend (Node 18+)
 
 ```bash
-cd backend
-
-# Simple generation with just a prompt
-uv run generate-image "A heroic knight character, white background"
-
-# With inspiration images from URLs
-uv run generate-image "Similar character" --images https://example.com/ref1.jpg
-
-# With local image files
-uv run generate-image "Similar character" --images ./reference.png
-
-# Mix of URLs and local files
-uv run generate-image "Fantasy sword" --images https://example.com/sword.jpg ./ref.png
+cd frontend
+npm install
+npm run dev            # → http://localhost:5173
 ```
 
-### Advanced Options
+Open `http://localhost:5173`, enter a theme, generate assets, and hit **Generate Sandbox**.
+
+**Controls:** ← / → move · `SPACE` jump (double jump!) · `R` reset position · `ESC` restart
+
+## Project Structure
+
+```
+ai-game-sandbox/
+├── frontend/                        # React 18 + TypeScript + Vite + Tailwind
+│   └── src/
+│       ├── pages/                   # Home → GenerateAssets → GameSandbox
+│       ├── components/              # PromptInput, AssetPromptsDisplay, CachedPrompts, ...
+│       └── context/                 # AssetContext (shared asset state)
+└── backend/                         # FastAPI + uv
+    ├── main.py                      # API server (port 8000)
+    ├── game_generator.py            # asset URLs → playable game pipeline (also a CLI)
+    ├── image_generation/            # FAL AI image generation + CLI
+    ├── sprite_processing/           # sprite-sheet analysis, background removal, frame extraction
+    ├── scene_builder/               # platform detection, scene config, Phaser HTML export
+    ├── cache_manager.py             # prompt cache
+    ├── image_cache_manager.py       # generated-image URL cache
+    ├── game_cache_manager.py        # whole-game cache (legacy)
+    └── component_cache_manager.py   # per-component cache
+```
+
+## API
+
+Full interactive docs at `http://localhost:8000/docs` once the backend is running.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/generate-asset-prompts` | Theme → asset prompt bundle (cached) |
+| `POST` | `/generate-image-asset` | Prompt → image via FAL AI (cached, `force_regenerate` supported) |
+| `POST` | `/generate-game` | Asset URLs → playable Phaser game HTML |
+| `GET` | `/cached-prompts` | List cached themes |
+| `POST` | `/fetch-cached-prompt` | Fetch full cached result for a theme |
+| `GET` | `/component-cache/stats` | Component cache statistics |
+| `DELETE` | `/cache` · `/image-cache` · `/game-cache` · `/component-cache` | Clear the respective cache |
+
+## CLI Tools
+
+Run from `backend/`:
 
 ```bash
-# Custom model and parameters
-uv run generate-image "Dragon character" \
-  --model fal-ai/flux/schnell \
-  --steps 30 \
-  --cfg 8.0 \
-  --size 512x512
+# Generate an image (default model: fal-ai/alpha-image-232/text-to-image)
+uv run generate-image "A heroic knight character, white background" --images ./reference.png
 
-# Generate multiple images
-uv run generate-image "Fantasy landscape" --num-images 4
+# Process a sprite sheet into game-ready frames
+uv run process-sprites --help
 
-# Save to specific directory
-uv run generate-image "Castle background" --output ./my_outputs
-
-# Use specific seed for reproducibility
-uv run generate-image "Character design" --seed 42
-
-# Quiet mode (less output)
-uv run generate-image "Quick test" --quiet
+# Build a playable game straight from local files
+uv run python game_generator.py --character sprites.png --background bg.png
 ```
 
-### CLI Options
+See [`backend/README.md`](backend/README.md) and [`backend/image_generation_README.md`](backend/image_generation_README.md) for all options.
 
-- `--images`, `-i`: Inspiration images (URLs or file paths)
-- `--model`, `-m`: Model name (default: fal-ai/flux/dev)
-- `--cfg`, `-c`: CFG scale/guidance (default: 7.5)
-- `--steps`, `-s`: Inference steps (default: 25)
-- `--size`: Image size as WIDTHxHEIGHT (default: 1024x1024)
-- `--num-images`, `-n`: Number of images (default: 1)
-- `--seed`: Random seed for reproducibility
-- `--output`, `-o`: Output directory (default: ./output)
-- `--quiet`, `-q`: Suppress progress messages
-- `--list-models`: List available models
+## Caching
 
-### Examples
-
-```bash
-# List available models
-uv run generate-image --list-models
-
-# Character with reference
-uv run generate-image "Warrior character in armor" \
-  --images ./character_ref.jpg \
-  --cfg 7.5 \
-  --steps 50
-
-# High-res background
-uv run generate-image "Medieval castle courtyard, detailed" \
-  --size 1920x1080 \
-  --steps 40
-
-# Multiple variations
-uv run generate-image "Fantasy sword concept" \
-  --num-images 8 \
-  --output ./sword_concepts
-```
-
-## Available Scripts
-
-### Frontend
-- `npm run dev` - Start the development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview the production build
-- `npm run lint` - Run ESLint
-
-### Python Backend
-(Run from `backend/` directory)
-- `uv sync` - Install dependencies and set up virtual environment
-- `uv run example.py` - Run image generation examples
-- `uv run generate-image "your prompt"` - CLI tool for image generation
-## Usage
-
-1. **Enter a theme**: Type a video game theme in the input box (e.g., "cyberpunk noir detective game")
-2. **Press Enter**: The frontend sends your theme to the backend
-3. **AI Processing**: Backend calls Claude API to generate detailed asset prompts
-4. **View Results**: See AI-generated prompts organized by:
-   - 🎮 **Main Character** - Multiple variations with detailed descriptions
-   - 🌍 **Environment Assets** - Ground tiles, platforms, props, trees, rocks, etc.
-   - 👥 **NPCs** - Allies, enemies, and neutral characters
-   - 🎨 **Background Scenes** - Full scene compositions for different levels/areas
-5. **Edit & Copy**: Each prompt is editable and has a copy button for easy use
-
-## 📚 API Documentation
-
-Once the backend is running, visit:
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
-
-### Main Endpoints
-
-**POST** `/generate-asset-prompts`
-- Generates asset prompts (uses cache if available)
-- Request: `{ "prompt": "game theme" }`
-- Response: `{ "result": "...", "cached": false }`
-
-**GET** `/cached-prompts`
-- Returns list of all cached prompts
-- Response: `{ "prompts": [...], "count": 5 }`
-
-**POST** `/fetch-cached-prompt`
-- Fetches full result for a cached prompt
-- Request: `{ "prompt": "exact prompt text" }`
-- Response: `{ "prompt": "...", "result": "...", "timestamp": "..." }`
-
-See `CACHING_FEATURE.md` for detailed caching documentation.
-This will create a virtual environment (`backend/.venv`) and install all dependencies.
-
-- ✨ **Beautiful UI**: Modern gradient design with glassmorphism effects
-- 🤖 **AI-Powered**: Uses Claude Sonnet 4.5 for intelligent prompt generation
-- ⚡ **Fast & Responsive**: Built with Vite and FastAPI
-- 🔄 **Loading States**: Smooth animations while waiting for AI responses
-- ❌ **Error Handling**: Clear error messages if something goes wrong
-- 📝 **Type-Safe**: Full TypeScript support on frontend
-- 📋 **Structured Output**: Organized, collapsible sections for each asset category
-- ✏️ **Editable Prompts**: Modify any generated prompt in real-time
-- 📄 **One-Click Copy**: Copy button for each prompt variation
-- 🎯 **Comprehensive Assets**: Characters, environments, NPCs, and backgrounds all generated at once
-- 💾 **Smart Caching**: Instant results for previously generated prompts (saves time & API costs)
-- 🕒 **Prompt History**: View and reload recent prompts with one click
-- ⚡ **Instant Loading**: Cached prompts load in <1 second vs 5-15 seconds for new generation
+Games are cached at the **component level** — background, character, mob, and collectible are processed and stored independently, so changing one asset only regenerates that component (80–90% faster). Details in [COMPONENT_CACHING_SYSTEM.md](COMPONENT_CACHING_SYSTEM.md) and [CACHING_IMPLEMENTATION_SUMMARY.md](CACHING_IMPLEMENTATION_SUMMARY.md).
 
 ## Tech Stack
 
-### Frontend
-- **React** - UI library
-- **TypeScript** - Type-safe JavaScript
-- **Tailwind CSS** - Utility-first CSS framework
-- **Vite** - Next-generation frontend tooling
-
-### Backend
-- **Python 3.9+** - Image generation module
-- **FAL AI** - AI image generation API
-- **uv** - Fast Python package manager
-
-## Prompts
-The following are prompt templates for generating various assets
-
-### Character
-```
-{user_instruction}
-Generate a character this centered within the image. Make the background white.
-The character is well visible within the scene and is well rendered
-```
-
-### Background
-```
-{user_instruction}
-Make this background fit the scene and well visible. Focus on making the background be well shown
-```
-
-### Item
-```
-{user_instruction}
-Make this item be visible within the center of the image. Make the background white around the item
-```
-
-## Performance & Caching
-
-The system implements **intelligent component-level caching** for dramatic performance improvements:
-
-- **80-90% faster** game regeneration after modifications
-- **Granular caching** of backgrounds, characters, mobs, and collectibles
-- **Automatic invalidation** when assets change
-- **Mix and match** cached components across generations
-
-For detailed information, see [COMPONENT_CACHING_SYSTEM.md](./COMPONENT_CACHING_SYSTEM.md)
-
-### API Endpoints for Cache Management
-
-```bash
-# Get component cache statistics
-GET /component-cache/stats
-
-# Clear component cache
-DELETE /component-cache
-
-# Get game cache list (legacy monolithic cache)
-GET /game-cache/list
-
-# Clear game cache
-DELETE /game-cache
-```
+| Layer | Technology |
+|---|---|
+| Frontend | React 18 · TypeScript 5 · Vite 5 · Tailwind CSS 3 · React Router 6 |
+| Backend | FastAPI · uvicorn · Python 3.12 · uv |
+| AI | Claude Sonnet 4.5 (`claude-sonnet-4-5`) for prompts & vision · FAL AI for images |
+| Game engine | Phaser 3.70 (self-contained generated HTML) |
 
 ## License
 
