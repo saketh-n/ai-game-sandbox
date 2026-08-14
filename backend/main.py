@@ -984,38 +984,6 @@ async def generate_game(request: GenerateGameRequest):
         temp_path = Path(temp_dir)
 
         try:
-            # Download background image for analysis
-            logger.info(f"[{request_id}] Downloading background image for analysis...")
-            async with httpx.AsyncClient(timeout=30.0) as http_client:
-                bg_response = await http_client.get(request.background_url)
-                bg_response.raise_for_status()
-
-                bg_path = temp_path / "background.png"
-                bg_path.write_bytes(bg_response.content)
-                logger.info(f"[{request_id}] Background downloaded: {len(bg_response.content)} bytes")
-
-            # Download character sprite for processing
-            logger.info(f"[{request_id}] Downloading character sprite for processing...")
-            async with httpx.AsyncClient(timeout=30.0) as http_client:
-                char_response = await http_client.get(request.character_url)
-                char_response.raise_for_status()
-
-                char_path = temp_path / "character.png"
-                char_path.write_bytes(char_response.content)
-                logger.info(f"[{request_id}] Character sprite downloaded: {len(char_response.content)} bytes")
-
-            # Download mob sprite if provided
-            mob_path = None
-            if request.mob_url:
-                logger.info(f"[{request_id}] Downloading mob sprite for processing...")
-                async with httpx.AsyncClient(timeout=30.0) as http_client:
-                    mob_response = await http_client.get(request.mob_url)
-                    mob_response.raise_for_status()
-
-                    mob_path = temp_path / "mob.png"
-                    mob_path.write_bytes(mob_response.content)
-                    logger.info(f"[{request_id}] Mob sprite downloaded: {len(mob_response.content)} bytes")
-
             # Initialize game generator (need it for sprite_analyzer)
             output_dir = temp_path / "generated_game"
             game_gen = GameGenerator(output_dir=str(output_dir))
@@ -1169,23 +1137,6 @@ async def generate_game(request: GenerateGameRequest):
                     )
                     cache_status['collectible'] = 'MISS'
 
-            # Generate game with URLs (runs in thread pool since it's blocking)
-            logger.info(f"[{request_id}] Generating game with Claude Vision analysis...")
-            game_html, scene_config, debug_frames = await asyncio.to_thread(
-                game_gen.generate_game_html_with_urls,
-                character_sprite_path=str(char_path),
-                character_sprite_url=request.character_url,
-                background_image_path=str(bg_path),
-                background_image_url=request.background_url,
-                num_frames=request.num_frames,
-                game_name=request.game_name,
-                collectible_sprites=[],  # Will be updated below if collectibles exist
-                collectible_positions=[],  # Will be updated below if collectibles exist
-                collectible_metadata=[],  # Will be updated below if collectibles exist
-                mob_sprite_path=str(mob_path) if mob_path else None,
-                mob_sprite_url=request.mob_url
-            )
-            
             # Log cache performance
             hits = sum(1 for v in cache_status.values() if v == 'HIT')
             misses = sum(1 for v in cache_status.values() if v == 'MISS')
