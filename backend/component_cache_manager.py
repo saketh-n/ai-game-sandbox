@@ -80,7 +80,7 @@ class ComponentCacheManager:
         """Save background platform analysis to cache"""
         component_key = self._generate_component_key("background", background_url)
         component_path = self._get_component_path(component_key)
-        component_path.mkdir(exist_ok=True)
+        component_path.mkdir(parents=True, exist_ok=True)
         
         try:
             # Save platform analysis
@@ -164,7 +164,7 @@ class ComponentCacheManager:
         """Save character sprite processing results to cache"""
         component_key = self._generate_component_key("character", character_url, num_frames=num_frames)
         component_path = self._get_component_path(component_key)
-        component_path.mkdir(exist_ok=True)
+        component_path.mkdir(parents=True, exist_ok=True)
         
         try:
             # Save sprite config
@@ -250,7 +250,7 @@ class ComponentCacheManager:
         """Save mob sprite processing results to cache"""
         component_key = self._generate_component_key("mob", mob_url, num_frames=num_frames)
         component_path = self._get_component_path(component_key)
-        component_path.mkdir(exist_ok=True)
+        component_path.mkdir(parents=True, exist_ok=True)
         
         try:
             # Save sprite config
@@ -330,7 +330,7 @@ class ComponentCacheManager:
         """Save collectible analysis and sprites to cache"""
         component_key = self._generate_component_key("collectible", collectible_url)
         component_path = self._get_component_path(component_key)
-        component_path.mkdir(exist_ok=True)
+        component_path.mkdir(parents=True, exist_ok=True)
         
         try:
             # Save collectible metadata
@@ -410,8 +410,8 @@ class ComponentCacheManager:
         """Clear all cached components"""
         if self.cache_dir.exists():
             shutil.rmtree(self.cache_dir)
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            print("✓ Component cache cleared")
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        print("✓ Component cache cleared")
 
 
 # Global instance
