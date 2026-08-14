@@ -384,70 +384,6 @@ def segment_collectible_sprites(collectible_path: Path, sprite_analyzer, expecte
     return sprite_data_urls
 
 
-def generate_collectible_positions(
-    platforms: List[dict],
-    num_collectibles: int = 10,
-    min_spacing: int = 80
-) -> List[dict]:
-    """
-    Generate random positions on top of platforms for collectibles.
-    
-    Args:
-        platforms: List of platform dictionaries with x, y, width, height
-        num_collectibles: Number of collectibles to place
-        min_spacing: Minimum spacing between collectibles
-        
-    Returns:
-        List of collectible position dicts with x, y, sprite_index
-    """
-    import random
-    
-    collectible_positions = []
-    placed_positions = []
-    
-    # Try to place collectibles on platforms
-    attempts = 0
-    max_attempts = num_collectibles * 10
-    
-    while len(collectible_positions) < num_collectibles and attempts < max_attempts:
-        attempts += 1
-        
-        # Pick a random platform
-        platform = random.choice(platforms)
-        
-        # Generate random x position on platform (with margin)
-        margin = 30
-        if platform['width'] < margin * 2:
-            continue
-            
-        x = random.randint(
-            platform['x'] + margin,
-            platform['x'] + platform['width'] - margin
-        )
-        
-        # Position collectible above platform
-        y = platform['y'] - 20  # 20px above platform
-        
-        # Check spacing from other collectibles
-        too_close = False
-        for placed_x, placed_y in placed_positions:
-            distance = ((x - placed_x) ** 2 + (y - placed_y) ** 2) ** 0.5
-            if distance < min_spacing:
-                too_close = True
-                break
-        
-        if not too_close:
-            collectible_positions.append({
-                'x': x,
-                'y': y,
-                'sprite_index': random.randint(0, 10)  # Will be clamped to actual sprite count
-            })
-            placed_positions.append((x, y))
-    
-    logger.info(f"Generated {len(collectible_positions)} collectible positions")
-    return collectible_positions
-
-
 def generate_platform_debug(
     background_path: Path,
     platforms: List[dict],
@@ -1209,29 +1145,19 @@ async def generate_game(request: GenerateGameRequest):
                     "num_frames": mob_config["num_frames"]
                 }
             
-            # ========== GENERATE COLLECTIBLE POSITIONS ==========
-            collectible_positions = []
-            if collectible_sprites:
-                logger.info(f"[{request_id}] Generating collectible positions...")
-                collectible_positions = generate_collectible_positions(
-                    platforms=scene_config["physics"]["platforms"],
-                    num_collectibles=min(15, max(8, len(scene_config["physics"]["platforms"]) * 3))
-                )
-                for pos in collectible_positions:
-                    pos['sprite_index'] = pos['sprite_index'] % len(collectible_sprites)
-            
             # ========== GENERATE GAME HTML ==========
+            # Collectible positions are generated in-browser at load time
+            # (like mobs), so each playthrough gets a fresh layout.
             logger.info(f"[{request_id}] Generating game HTML...")
             mob_data = scene_config.get('mob')
             game_html = game_gen.web_exporter._generate_html(
                 scene_config,
                 request.background_url,
                 processed_sprite_data_url,
-                collectible_sprites,
-                collectible_positions,
-                collectible_metadata,
-                mob_data['sprite_path'] if mob_data else None,
-                mob_data if mob_data else None
+                collectible_sprites=collectible_sprites,
+                collectible_metadata=collectible_metadata,
+                mob_sprite_path=mob_data['sprite_path'] if mob_data else None,
+                mob_data=mob_data if mob_data else None
             )
 
             logger.info(f"[{request_id}] Game HTML generated: {len(game_html)} characters")

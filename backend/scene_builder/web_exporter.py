@@ -69,7 +69,6 @@ class WebGameExporter:
         bg_path: str,
         sprite_path: str,
         collectible_sprites: list = None,
-        collectible_positions: list = None,
         collectible_metadata: list = None,
         mob_sprite_path: str = None,
         mob_data: dict = None
@@ -78,7 +77,6 @@ class WebGameExporter:
 
         platforms_json = json.dumps(config['physics']['platforms'])
         collectible_sprites_json = json.dumps(collectible_sprites if collectible_sprites else [])
-        collectible_positions_json = json.dumps(collectible_positions if collectible_positions else [])
         collectible_metadata_json = json.dumps(collectible_metadata if collectible_metadata else [])
         
         # Prepare mob data
@@ -390,6 +388,43 @@ class WebGameExporter:
     </div>
 
     <script>
+        // Place collectibles on platforms at load time (like mobs), so every
+        // playthrough gets a fresh layout.
+        function generateCollectiblePositions(platforms, numSprites) {{
+            if (platforms.length === 0 || numSprites <= 0) {{
+                return [];
+            }}
+            const numCollectibles = Math.min(15, Math.max(8, platforms.length * 3));
+            const minSpacing = 80;
+            const margin = 30;
+            const positions = [];
+            let attempts = 0;
+            const maxAttempts = numCollectibles * 10;
+
+            while (positions.length < numCollectibles && attempts < maxAttempts) {{
+                attempts++;
+
+                const platform = platforms[Math.floor(Math.random() * platforms.length)];
+                if (platform.width < margin * 2) {{
+                    continue;
+                }}
+
+                const x = platform.x + margin +
+                    Math.floor(Math.random() * (platform.width - 2 * margin + 1));
+                const y = platform.y - 20;  // 20px above platform
+
+                const tooClose = positions.some(p => Math.hypot(x - p.x, y - p.y) < minSpacing);
+                if (!tooClose) {{
+                    positions.push({{
+                        x: x,
+                        y: y,
+                        sprite_index: Math.floor(Math.random() * numSprites)
+                    }});
+                }}
+            }}
+            return positions;
+        }}
+
         class {config['name']} extends Phaser.Scene {{
             constructor() {{
                 super('{config['name']}');
@@ -653,7 +688,9 @@ class WebGameExporter:
                 this.projectiles = this.physics.add.group();
 
                 // Create collectibles (clear any existing group first)
-                const collectiblePositions = {collectible_positions_json};
+                const collectiblePositions = generateCollectiblePositions(
+                    platformData, this.collectibleSprites.length
+                );
                 if (this.collectibles && this.collectibles.children) {{
                     this.collectibles.clear(true, true);  // Remove all children and destroy them
                 }}
