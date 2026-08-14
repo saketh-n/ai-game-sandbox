@@ -15,7 +15,7 @@ import base64
 # Version of the sprite-processing pipeline. Cached components store already
 # background-removed / segmented sprites, so bump this whenever that processing
 # changes to invalidate stale entries.
-ALGO_VERSION = "v2"
+ALGO_VERSION = "v3"
 
 
 class ComponentCacheManager:

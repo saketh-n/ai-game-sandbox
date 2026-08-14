@@ -339,36 +339,127 @@ Please respond in this EXACT JSON format (no markdown, just JSON):
         # Sort by horizontal position (left to right)
         component_boxes.sort(key=lambda b: b['left'])
 
+        # Merge components that share a horizontal span: a detached tail, floating
+        # hair, or weapon tip lives in the same x-range as its body, while genuinely
+        # separate frames on a horizontal strip don't overlap horizontally.
+        component_boxes = self._merge_overlapping_boxes(component_boxes)
+
         # Filter out very small components (likely noise)
         if len(component_boxes) > 0:
             max_area = max(b['area'] for b in component_boxes)
             min_area_threshold = max_area * 0.01  # Keep components > 1% of largest
             component_boxes = [b for b in component_boxes if b['area'] > min_area_threshold]
 
-        print(f"  After filtering: {len(component_boxes)} sprites detected")
+        print(f"  After merging + filtering: {len(component_boxes)} sprites detected")
 
-        # If we don't have the expected number, fall back
         if len(component_boxes) != expected_frames:
             print(f"  ⚠️  Connected components found {len(component_boxes)} sprites, expected {expected_frames}")
-            print(f"  Falling back to grid-based extraction")
+            print("  Trying column-gap slicing")
+            gap_frames = self._extract_by_column_gaps(sprite_sheet)
+            if gap_frames is not None:
+                print(f"  Column-gap slicing found {len(gap_frames)} frames (expected {expected_frames})")
+                return self._center_frames(gap_frames)
+            print("  No column gaps found, falling back to grid-based extraction")
             return self._extract_grid_based(sprite_sheet, 1, expected_frames)
 
         # Extract each sprite using its bounding box
-        frames = []
-        max_frame_width = 0
-        max_frame_height = 0
+        frames = [
+            sprite_sheet.crop((box['left'], box['top'], box['right'], box['bottom']))
+            for box in component_boxes
+        ]
 
+        print(f"  ✓ Extracted {len(frames)} sprites using connected components")
+        return self._center_frames(frames)
+
+    def _merge_overlapping_boxes(self, component_boxes: list, gap_px: int = 4) -> list:
+        """
+        Merge component boxes whose x-ranges overlap or sit within gap_px of each
+        other. Fixes over-segmentation where a detached part of a sprite (tail,
+        hair, sword tip) shows up as its own component.
+
+        Args:
+            component_boxes: Box dicts sorted by 'left'
+            gap_px: Boxes separated horizontally by at most this many pixels merge
+
+        Returns:
+            Merged list of boxes, still sorted by 'left'
+        """
+        merged = []
         for box in component_boxes:
-            # Crop to bounding box
-            sprite = sprite_sheet.crop((box['left'], box['top'], box['right'], box['bottom']))
+            if merged and box['left'] <= merged[-1]['right'] + gap_px:
+                prev = merged[-1]
+                prev['left'] = min(prev['left'], box['left'])
+                prev['right'] = max(prev['right'], box['right'])
+                prev['top'] = min(prev['top'], box['top'])
+                prev['bottom'] = max(prev['bottom'], box['bottom'])
+                prev['area'] = (prev['bottom'] - prev['top']) * (prev['right'] - prev['left'])
+            else:
+                merged.append(dict(box))
+        return merged
 
-            frames.append(sprite)
-            max_frame_width = max(max_frame_width, sprite.width)
-            max_frame_height = max(max_frame_height, sprite.height)
+    def _extract_by_column_gaps(self, sprite_sheet: Image.Image) -> Optional[list]:
+        """
+        Slice a horizontal strip at its actual transparent column gaps
+        (projection profile). Handles arbitrarily uneven spacing and by
+        construction never cuts through a sprite; the number of gaps determines
+        the frame count, so no expected count is needed.
 
-        print(f"  Max content size: {max_frame_width}×{max_frame_height}px")
+        Returns:
+            List of tight-cropped frame images, or None if there are no interior
+            gaps to slice at (e.g. a fully opaque sheet).
+        """
+        alpha = np.array(sprite_sheet)[:, :, 3]
+        col_has_content = (alpha > 10).any(axis=0)
 
-        # Center all frames on consistent canvas
+        content_cols = np.where(col_has_content)[0]
+        if len(content_cols) == 0:
+            return None
+
+        # Find interior runs of empty columns (ignore leading/trailing margins)
+        # and cut at each gap's midpoint.
+        cut_points = []
+        in_gap = False
+        gap_start = 0
+        for col in range(content_cols[0], content_cols[-1] + 1):
+            if not col_has_content[col]:
+                if not in_gap:
+                    in_gap = True
+                    gap_start = col
+            elif in_gap:
+                in_gap = False
+                cut_points.append((gap_start + col) // 2)
+
+        if not cut_points:
+            return None
+
+        boundaries = [content_cols[0]] + cut_points + [content_cols[-1] + 1]
+        frames = []
+        for start, end in zip(boundaries[:-1], boundaries[1:]):
+            slice_img = sprite_sheet.crop((start, 0, end, sprite_sheet.height))
+
+            # Tight-crop the slice to its own content
+            slice_alpha = np.array(slice_img)[:, :, 3]
+            rows_with_content = np.where((slice_alpha > 10).any(axis=1))[0]
+            cols_with_content = np.where((slice_alpha > 10).any(axis=0))[0]
+            frames.append(slice_img.crop((
+                cols_with_content[0],
+                rows_with_content[0],
+                cols_with_content[-1] + 1,
+                rows_with_content[-1] + 1
+            )))
+
+        return frames
+
+    def _center_frames(self, frames: list) -> Tuple[list, int, int]:
+        """
+        Center frames on a shared max-width × max-height transparent canvas.
+
+        Returns:
+            Tuple of (centered_frames, canvas_width, canvas_height)
+        """
+        max_frame_width = max(frame.width for frame in frames)
+        max_frame_height = max(frame.height for frame in frames)
+
         centered_frames = []
         for frame in frames:
             canvas = Image.new('RGBA', (max_frame_width, max_frame_height), (0, 0, 0, 0))
@@ -377,9 +468,7 @@ Please respond in this EXACT JSON format (no markdown, just JSON):
             canvas.paste(frame, (x_offset, y_offset), frame)
             centered_frames.append(canvas)
 
-        print(f"  ✓ Extracted {len(centered_frames)} sprites using connected components")
         print(f"  ✓ All frames centered on {max_frame_width}×{max_frame_height}px canvas")
-
         return centered_frames, max_frame_width, max_frame_height
 
     def _extract_grid_based(
