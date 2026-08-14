@@ -5,6 +5,7 @@ Removes solid color backgrounds from character sprites
 
 from PIL import Image
 import numpy as np
+from scipy import ndimage
 from typing import Union, Tuple, Optional
 from pathlib import Path
 
@@ -68,8 +69,18 @@ class BackgroundRemover:
                 (np.abs(b.astype(int) - bg_b) <= tolerance)
             )
 
-        # Set alpha to 0 for background pixels
-        data[mask, 3] = 0
+        # Flood-fill semantics: only clear background-colored regions connected to
+        # the image border, so matching pixels enclosed inside a sprite (eyes,
+        # highlights) stay opaque.
+        structure = np.ones((3, 3), dtype=int)
+        labeled, num_regions = ndimage.label(mask, structure=structure)
+        if num_regions > 0:
+            border_labels = np.unique(np.concatenate([
+                labeled[0, :], labeled[-1, :], labeled[:, 0], labeled[:, -1]
+            ]))
+            border_labels = border_labels[border_labels != 0]
+            if border_labels.size > 0:
+                data[np.isin(labeled, border_labels), 3] = 0
 
         # Convert back to PIL Image
         result = Image.fromarray(data, 'RGBA')

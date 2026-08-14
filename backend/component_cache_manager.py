@@ -12,6 +12,11 @@ from datetime import datetime
 import shutil
 import base64
 
+# Version of the sprite-processing pipeline. Cached components store already
+# background-removed / segmented sprites, so bump this whenever that processing
+# changes to invalidate stale entries.
+ALGO_VERSION = "v2"
+
 
 class ComponentCacheManager:
     """Manages caching of individual game components"""
@@ -30,7 +35,7 @@ class ComponentCacheManager:
             **kwargs: Additional parameters that affect processing (e.g., num_frames)
         """
         # Include all parameters that affect the output
-        cache_string = f"{component_type}|{url}"
+        cache_string = f"{ALGO_VERSION}|{component_type}|{url}"
         for key in sorted(kwargs.keys()):
             cache_string += f"|{key}={kwargs[key]}"
         
